@@ -187,9 +187,15 @@ df = ws.get(alias)
 left, right = st.columns([1, 1])
 
 with left:
-    st.subheader(f"`{alias}` — {len(df)} rows × {len(df.columns)} cols")
+    st.subheader(f"`{alias}` — {len(df):,} rows × {len(df.columns)} cols")
     st.caption(ws.meta.get(alias, {}).get("source", ""))
-    st.dataframe(df.head(50), use_container_width=True)
+    st.dataframe(df, use_container_width=True, height=500)
+    st.download_button(
+        f"Download `{alias}` as CSV ({len(df):,} rows)",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name=f"{alias}.csv",
+        mime="text/csv",
+    )
 
     with st.expander("Profile", expanded=False):
         st.json(profile_df(df))
