@@ -13,7 +13,7 @@ Public surface (what agent.py wires into tool schemas):
 
 from __future__ import annotations
 
-import io
+import functools
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,7 +27,7 @@ VIEW_URL = "https://{domain}/api/views/{id}.json"
 
 DEFAULT_TIMEOUT = 60
 DEFAULT_FETCH_LIMIT = 25000   # row cap per fetch; agent can override up to MAX
-MIN_FETCH_LIMIT = 5000        # floor: never fetch fewer than this unless agent overrides explicitly with smaller for sampling
+MIN_FETCH_LIMIT = 5000
 MAX_FETCH_LIMIT = 100000
 
 
@@ -35,13 +35,9 @@ MAX_FETCH_LIMIT = 100000
 
 @dataclass
 class Workspace:
-    """Holds multiple named DataFrames for the agent to operate on.
-
-    The agent addresses datasets by short alias ('vax', 'flu_2024'), not by
-    Socrata id. Aliases are assigned at fetch time and persist for the session.
-    """
+    """Holds multiple named DataFrames for the agent to operate on."""
     frames: dict[str, pd.DataFrame] = field(default_factory=dict)
-    meta: dict[str, dict] = field(default_factory=dict)  # alias -> {id, name, source, fetched_at}
+    meta: dict[str, dict] = field(default_factory=dict)
 
     def add(self, alias: str, df: pd.DataFrame, meta: dict) -> None:
         self.frames[alias] = df
@@ -67,15 +63,32 @@ def _catalog_get(params: dict) -> dict:
     return r.json()
 
 
-def search_catalog(workspace: Workspace, query: str, limit: int = 10) -> dict:
-    """Full-text search the CDC Socrata catalog. Returns ranked dataset metadata."""
-    data = _catalog_get({
+@functools.lru_cache(maxsize=128)
+def _cached_catalog_search(query: str, limit: int) -> dict:
+    """Cached wrapper — Socrata catalog rarely changes within a session, and the
+    discover loop often re-issues the same query while exploring. Process-wide cache."""
+    return _catalog_get({
         "domains": CDC_DOMAIN,
         "search_context": CDC_DOMAIN,
         "q": query,
         "only": "dataset",
-        "limit": min(limit, 25),
+        "limit": limit,
     })
+
+
+@functools.lru_cache(maxsize=64)
+def _cached_view_get(dataset_id: str) -> dict:
+    """Cached schema fetch keyed on dataset_id."""
+    url = VIEW_URL.format(domain=CDC_DOMAIN, id=dataset_id)
+    r = requests.get(url, timeout=DEFAULT_TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
+def search_catalog(workspace: Workspace, query: str, limit: int = 5) -> dict:
+    """Full-text search the CDC Socrata catalog. Returns ranked dataset metadata."""
+    capped = min(int(limit), 25)
+    data = _cached_catalog_search(query, capped)
     results = []
     for entry in data.get("results", []):
         r = entry.get("resource", {})
@@ -94,10 +107,7 @@ def search_catalog(workspace: Workspace, query: str, limit: int = 10) -> dict:
 
 def get_dataset_schema(workspace: Workspace, dataset_id: str) -> dict:
     """Full column schema (name, type, description) for a single dataset."""
-    url = VIEW_URL.format(domain=CDC_DOMAIN, id=dataset_id)
-    r = requests.get(url, timeout=DEFAULT_TIMEOUT)
-    r.raise_for_status()
-    view = r.json()
+    view = _cached_view_get(dataset_id)
     cols = [
         {
             "field": c.get("fieldName"),
@@ -126,13 +136,7 @@ def fetch_dataset(
     order: str | None = None,
     limit: int = DEFAULT_FETCH_LIMIT,
 ) -> dict:
-    """Run a SoQL query against a Socrata dataset and load into the workspace as `alias`.
-
-    select/where/order use SoQL syntax. Examples:
-      select="state, year, deaths"
-      where="year >= 2020 AND state = 'CA'"
-      order="year DESC"
-    """
+    """Run a SoQL query against a Socrata dataset and load into the workspace as `alias`."""
     limit = min(int(limit), MAX_FETCH_LIMIT)
     params: dict[str, Any] = {"$limit": limit}
     if select: params["$select"] = select
@@ -147,6 +151,23 @@ def fetch_dataset(
         return {"ok": False, "error": f"Unexpected response: {str(rows)[:200]}"}
 
     df = pd.DataFrame(rows)
+    if len(df) == 0:
+        # 0 rows usually means the `where` filter excluded everything (wrong state name,
+        # year out of range, typo in a categorical value). Don't load it into the workspace
+        # — return a self-correctable error so the agent can revise the filter.
+        return {
+            "ok": False,
+            "error": (
+                f"fetch_dataset returned 0 rows for dataset {dataset_id}. "
+                "Your `where` clause likely excludes everything. Try get_dataset_schema "
+                "to see real column values, or relax the filter (e.g. drop the state "
+                "predicate, widen the year range, or use ILIKE for fuzzy match)."
+            ),
+            "alias": alias,
+            "rows": 0,
+            "soql": {"select": select, "where": where, "order": order, "limit": limit},
+        }
+
     workspace.add(alias, df, {
         "id": dataset_id,
         "source": f"data.cdc.gov/{dataset_id}",
@@ -197,7 +218,7 @@ DISCOVERY_OPS_DOC = """Dataset discovery ops (operate on a shared Workspace):
 
 # ---------- MULTI-DATASET OPS (joins, concat, aggregate) ----------
 
-def _resolve_keys(keys: str | list[str]) -> list[str]:
+def _resolve_keys(keys):
     return [keys] if isinstance(keys, str) else list(keys)
 
 
@@ -205,9 +226,9 @@ def merge_datasets(
     workspace: Workspace,
     left: str,
     right: str,
-    on: str | list[str] | None = None,
-    left_on: str | list[str] | None = None,
-    right_on: str | list[str] | None = None,
+    on=None,
+    left_on=None,
+    right_on=None,
     how: str = "inner",
     alias: str = "merged",
 ) -> dict:
@@ -227,6 +248,17 @@ def merge_datasets(
         out = l.merge(r, suffixes=(f"_{left}", f"_{right}"), **kwargs)
     except Exception as e:
         return {"ok": False, "error": f"Merge failed: {e}"}
+
+    if len(out) == 0:
+        return {
+            "ok": False,
+            "error": (
+                f"Inner merge of `{left}` ({len(l)} rows) and `{right}` ({len(r)} rows) "
+                f"on {kwargs.get('on') or (kwargs.get('left_on'), kwargs.get('right_on'))} "
+                "produced 0 rows — the join keys don't overlap. Inspect a few values from "
+                "each side (e.g. select_columns) to verify casing / formatting / aggregation grain."
+            ),
+        }
 
     workspace.add(alias, out, {
         "source": f"merge({left}, {right}, how={how})",
@@ -259,12 +291,11 @@ def concat_datasets(
 def aggregate_dataset(
     workspace: Workspace,
     source: str,
-    group_by: str | list[str],
-    agg: dict[str, str],   # {"deaths": "sum", "rate": "mean"}
+    group_by,
+    agg: dict[str, str],
     alias: str = "agg",
 ) -> dict:
-    """Group + aggregate. Useful before joining datasets at different grain
-    (e.g. roll county-level up to state-level before joining a state-level table)."""
+    """Group + aggregate. Useful before joining datasets at different grain."""
     df = workspace.get(source)
     try:
         out = df.groupby(_resolve_keys(group_by), dropna=False).agg(agg).reset_index()
@@ -276,7 +307,7 @@ def aggregate_dataset(
     return {"ok": True, "alias": alias, "rows": len(out), "columns": list(out.columns)}
 
 
-def select_columns(workspace: Workspace, source: str, columns: list[str], alias: str | None = None) -> dict:
+def select_columns(workspace: Workspace, source: str, columns: list[str], alias=None) -> dict:
     """Project a subset of columns into a new (or same) alias."""
     df = workspace.get(source)
     missing = [c for c in columns if c not in df.columns]

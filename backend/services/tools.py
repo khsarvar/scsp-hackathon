@@ -1,13 +1,19 @@
-"""Deterministic functions the agent calls: profile, cleaning ops, statistical tests."""
+"""Deterministic functions the agent calls: profile, cleaning ops, statistical tests.
+
+Ported from akbar/init's tools.py. The agent never writes pandas/scipy code — it only
+picks named ops from these registries and supplies arguments. Each stats test bakes
+in an assumption check (Shapiro for normality) and a non-parametric fallback.
+"""
 
 import numpy as np
 import pandas as pd
 from scipy import stats as sp_stats
 
 
-# ---------- PROFILE ----------
+# ---------- LIGHTWEIGHT PROFILE (for the agent loop) ----------
 
 def profile_df(df: pd.DataFrame) -> dict:
+    """Compact profile the LLM can reason over: dtypes, missing, unique counts, samples."""
     cols = []
     for col in df.columns:
         s = df[col]
@@ -22,9 +28,10 @@ def profile_df(df: pd.DataFrame) -> dict:
     return {"n_rows": int(len(df)), "n_cols": int(len(df.columns)), "columns": cols}
 
 
-# ---------- CLEANING OPS ----------
+# ---------- CLEANING OPS REGISTRY ----------
 
 CLEANING_OPS = {}
+
 
 def _op(name):
     def deco(fn):
@@ -39,11 +46,13 @@ def strip_whitespace(df, col):
     df[col] = df[col].astype(str).str.strip()
     return df, f"Stripped whitespace from '{col}'"
 
+
 @_op("lowercase")
 def lowercase(df, col):
     df = df.copy()
     df[col] = df[col].astype(str).str.lower()
     return df, f"Lowercased '{col}'"
+
 
 @_op("replace_value")
 def replace_value(df, col, old, new):
@@ -54,6 +63,7 @@ def replace_value(df, col, old, new):
         df[col] = df[col].replace(old, new)
     return df, f"Replaced {old!r} with {new!r} in '{col}'"
 
+
 @_op("coerce_numeric")
 def coerce_numeric(df, col):
     df = df.copy()
@@ -62,17 +72,20 @@ def coerce_numeric(df, col):
     after = df[col].notna().sum()
     return df, f"Coerced '{col}' to numeric (lost {int(before - after)} values to NaN)"
 
+
 @_op("parse_datetime")
 def parse_datetime(df, col):
     df = df.copy()
     df[col] = pd.to_datetime(df[col], errors="coerce")
     return df, f"Parsed '{col}' as datetime"
 
+
 @_op("drop_duplicates")
 def drop_duplicates(df, subset=None):
     before = len(df)
     df = df.drop_duplicates(subset=subset).reset_index(drop=True)
     return df, f"Dropped {before - len(df)} duplicate rows"
+
 
 @_op("drop_rows_missing")
 def drop_rows_missing(df, cols):
@@ -82,6 +95,7 @@ def drop_rows_missing(df, cols):
     df = df.dropna(subset=cols).reset_index(drop=True)
     return df, f"Dropped {before - len(df)} rows missing values in {cols}"
 
+
 @_op("impute_median")
 def impute_median(df, col):
     df = df.copy()
@@ -89,6 +103,7 @@ def impute_median(df, col):
     n = int(df[col].isna().sum())
     df[col] = df[col].fillna(val)
     return df, f"Imputed {n} missing values in '{col}' with median ({val})"
+
 
 @_op("impute_mode")
 def impute_mode(df, col):
@@ -101,6 +116,7 @@ def impute_mode(df, col):
     df[col] = df[col].fillna(val)
     return df, f"Imputed {n} missing values in '{col}' with mode ({val!r})"
 
+
 @_op("clip_outliers_iqr")
 def clip_outliers_iqr(df, col):
     df = df.copy()
@@ -110,6 +126,7 @@ def clip_outliers_iqr(df, col):
     n = int(((df[col] < lo) | (df[col] > hi)).sum())
     df[col] = df[col].clip(lo, hi)
     return df, f"Clipped {n} outliers in '{col}' to [{lo:.2f}, {hi:.2f}]"
+
 
 @_op("rename_column")
 def rename_column(df, old, new):
@@ -138,7 +155,7 @@ def apply_op(df, op_spec):
     return fn(df, **op_spec.get("args", {}))
 
 
-# ---------- STATS ----------
+# ---------- STATISTICAL TESTS ----------
 
 def _interpret_p(p, alpha=0.05):
     if p < 0.001:

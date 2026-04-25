@@ -1,0 +1,11 @@
+fastapi>=0.111
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+pydantic-settings>=2.2
+anthropic>=0.40.0
+pandas>=2.2
+numpy>=1.26
+scipy>=1.13
+python-dotenv>=1.0
+requests>=2.31
+openpyxl>=3.1
