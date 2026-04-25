@@ -60,6 +60,18 @@ body {
 .prose-healthlab code {
   @apply bg-slate-100 px-1 py-0.5 rounded text-xs font-mono text-teal-700;
 }
+.prose-healthlab table {
+  @apply w-full border-collapse text-xs my-3;
+}
+.prose-healthlab th {
+  @apply bg-slate-100 text-slate-700 font-semibold border border-slate-200 px-2 py-1 text-left;
+}
+.prose-healthlab td {
+  @apply border border-slate-200 px-2 py-1 align-top;
+}
+.prose-healthlab pre {
+  @apply overflow-auto rounded-md bg-slate-950 text-slate-50 p-3 text-xs;
+}
 
 /* Step card animation */
 @keyframes fadeSlideIn {

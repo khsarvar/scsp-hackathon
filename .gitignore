@@ -23,6 +23,8 @@ frontend/build/
 
 # Uploads / temp
 /tmp/healthlab_sessions/
+backend/var/
+var/
 
 # macOS
 .DS_Store

@@ -114,6 +114,10 @@ def get_dataset_schema(workspace: Workspace, dataset_id: str) -> dict:
             "name": c.get("name"),
             "type": c.get("dataTypeName"),
             "description": (c.get("description") or "")[:300],
+            "sample_values": [
+                x.get("item") if isinstance(x, dict) else x
+                for x in (c.get("cachedContents", {}).get("top") or [])[:5]
+            ],
         }
         for c in view.get("columns", [])
     ]

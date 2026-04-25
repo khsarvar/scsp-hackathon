@@ -11,6 +11,7 @@ async FastAPI routes to expose them as SSE streams. See routers/streaming.py.
 
 import concurrent.futures
 import json
+import re
 import threading
 from typing import Callable, Optional
 
@@ -196,16 +197,17 @@ SCOUT_TOOLS = [
 ]
 
 
-def scout_catalog(question: str, max_steps: int = 4) -> dict:
+def scout_catalog(question: str, max_steps: int = 3, model_name: str | None = None) -> dict:
     """Haiku-backed sub-agent. Returns {ok, dataset_id, rationale, recommended_select?, recommended_where?, recommended_alias?, alternatives}."""
     ws = Workspace()  # throwaway: scout doesn't load any frames
     messages = [{"role": "user", "content": f"Research question: {question}\n\nFind the single best dataset."}]
 
     client = _client()
+    model = model_name or settings.scout_model_name
     for _ in range(max_steps):
         try:
             resp = client.messages.create(
-                model=settings.scout_model_name,
+                model=model,
                 max_tokens=512,
                 system=[{"type": "text", "text": SCOUT_SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 tools=SCOUT_TOOLS,
@@ -251,7 +253,79 @@ def scout_catalog(question: str, max_steps: int = 4) -> dict:
             return {"ok": True, **recommended}
         messages.append({"role": "user", "content": tool_results})
 
+    return _fallback_scout(question)
+
+
+def _fallback_scout(question: str) -> dict:
+    """Deterministic backstop when the LLM scout does not call recommend.
+
+    Keeps the discovery loop fast by returning a schema-checked candidate
+    instead of forcing the main agent into multiple catalog-search turns.
+    """
+    ws = Workspace()
+    q = question.strip()
+    variants = [q]
+    if "emergency visits" in q.lower():
+        variants.append(re.sub("emergency visits", "emergency department visits", q, flags=re.I))
+    variants.extend([
+        f"{q} emergency department",
+        f"{q} chronic disease indicators",
+        f"{q} surveillance",
+    ])
+    seen = set()
+    for query in variants:
+        if query.lower() in seen:
+            continue
+        seen.add(query.lower())
+        try:
+            result = _search_catalog(ws, query, 8)
+        except Exception:
+            continue
+        candidates = result.get("results", [])
+        if not candidates:
+            continue
+        preferred = _rank_catalog_candidates(question, candidates)
+        for cand in preferred[:3]:
+            dataset_id = cand.get("id")
+            if not dataset_id:
+                continue
+            try:
+                schema = _get_dataset_schema(ws, dataset_id)
+            except Exception:
+                schema = {}
+            fields = [c.get("field") for c in schema.get("columns", []) if c.get("field")]
+            alias = re.sub(r"[^a-z0-9]+", "_", (cand.get("name") or dataset_id).lower()).strip("_")[:24] or "primary"
+            return {
+                "ok": True,
+                "dataset_id": dataset_id,
+                "rationale": f"Deterministic scout fallback selected the best Socrata catalog match for `{query}` after schema inspection.",
+                "recommended_select": ",".join(fields[:12]) if fields else None,
+                "recommended_where": None,
+                "recommended_alias": alias,
+                "alternatives": [c.get("id") for c in preferred[1:4] if c.get("id")],
+            }
     return {"ok": False, "error": "scout did not produce a recommendation"}
+
+
+def _rank_catalog_candidates(question: str, candidates: list[dict]) -> list[dict]:
+    terms = [t for t in re.split(r"[^a-z0-9]+", question.lower()) if len(t) > 2]
+
+    def score(c: dict) -> int:
+        hay = " ".join([
+            str(c.get("name", "")),
+            str(c.get("description", "")),
+            " ".join(c.get("columns_field_names", []) or []),
+        ]).lower()
+        s = sum(3 for t in terms if t in hay)
+        if "emergency" in hay or "ed" in hay:
+            s += 2
+        if "asthma" in hay:
+            s += 4
+        if "chronic disease indicators" in hay:
+            s += 3
+        return s
+
+    return sorted(candidates, key=score, reverse=True)
 
 
 def discover(
@@ -259,6 +333,8 @@ def discover(
     workspace: Optional[Workspace] = None,
     max_steps: int = 15,
     on_event: EventCallback = None,
+    model_name: str | None = None,
+    scout_model_name: str | None = None,
 ) -> tuple[Workspace, Optional[str], list]:
     """Run the discovery agent. Returns (workspace, primary_alias, events).
 
@@ -283,10 +359,11 @@ def discover(
     messages = [{"role": "user", "content": user_msg}]
 
     client = _client()
+    model = model_name or settings.model_name
     for _ in range(max_steps):
         try:
             resp = client.messages.create(
-                model=settings.model_name,
+                model=model,
                 max_tokens=1024,
                 system=[{"type": "text", "text": DISCOVER_SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 tools=DISCOVER_TOOLS,
@@ -318,7 +395,7 @@ def discover(
                     "name": "scout", "args": {"question": question_arg[:80]},
                     "rationale": "Haiku sub-agent for catalog search + schema",
                 })
-                result = scout_catalog(question_arg)
+                result = scout_catalog(question_arg, model_name=scout_model_name)
                 if result.get("ok"):
                     summary = f"recommend `{result.get('dataset_id', '?')}` — {(result.get('rationale') or '')[:80]}"
                 else:
@@ -327,6 +404,37 @@ def discover(
                     "type": "tool_result", "agent": "discover",
                     "name": "scout", "summary": summary, "result": result,
                 })
+                if result.get("ok") and result.get("dataset_id"):
+                    dataset_id = result["dataset_id"]
+                    alias = result.get("recommended_alias") or "primary"
+                    fetch_args = {
+                        "dataset_id": dataset_id,
+                        "alias": alias,
+                        "select": result.get("recommended_select"),
+                        "where": result.get("recommended_where"),
+                        "limit": 25000,
+                    }
+                    emit({
+                        "type": "tool_call", "agent": "discover",
+                        "name": "fetch_dataset", "args": fetch_args,
+                        "rationale": "Fast path from scout recommendation",
+                    })
+                    fetch_result = apply_discovery_op(workspace, {"op": "fetch_dataset", "args": fetch_args})
+                    emit({
+                        "type": "tool_result", "agent": "discover",
+                        "name": "fetch_dataset", "summary": _summarize_result("fetch_dataset", fetch_result),
+                        "result": _truncate_result(fetch_result),
+                    })
+                    if fetch_result.get("ok") and fetch_result.get("rows", 0) > 0:
+                        emit({
+                            "type": "final", "agent": "discover",
+                            "primary_alias": alias,
+                            "summary": f"Fast scout selected and fetched `{dataset_id}` as `{alias}`.",
+                        })
+                        return {
+                            "tool_result": {"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result, default=str)},
+                            "finish_marker": (alias, "fast scout fetch"),
+                        }
                 return {
                     "tool_result": {"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result, default=str)},
                     "finish_marker": None,
@@ -481,6 +589,7 @@ def auto_clean(
     alias: str,
     max_steps: int = 12,
     on_event: EventCallback = None,
+    model_name: str | None = None,
 ) -> list:
     """Run the cleaning agent on workspace[alias]. Mutates workspace in place. Returns events."""
     df = workspace.get(alias)
@@ -488,10 +597,11 @@ def auto_clean(
     messages = [{"role": "user", "content": f"Clean the dataset '{alias}' for statistical analysis. Start by profiling."}]
 
     client = _client()
+    model = model_name or settings.model_name
     for _ in range(max_steps):
         try:
             resp = client.messages.create(
-                model=settings.model_name,
+                model=model,
                 max_tokens=1024,
                 system=[{"type": "text", "text": CLEAN_SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 tools=CLEANING_TOOLS,
@@ -577,7 +687,7 @@ Output a single JSON array (no prose, no code fences). Each item:
 """
 
 
-def generate_hypotheses(workspace: Workspace, alias: str, n: int = 4) -> list[dict]:
+def generate_hypotheses(workspace: Workspace, alias: str, n: int = 4, model_name: str | None = None) -> list[dict]:
     import pandas as pd
     df = workspace.get(alias)
     profile = profile_df(df)
@@ -586,7 +696,7 @@ def generate_hypotheses(workspace: Workspace, alias: str, n: int = 4) -> list[di
 
     client = _client()
     resp = client.messages.create(
-        model=settings.model_name,
+        model=model_name or settings.model_name,
         max_tokens=2048,
         system=[{"type": "text", "text": HYPO_SYSTEM, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_msg}],
@@ -638,6 +748,7 @@ def analyze_question(
     alias: str,
     max_steps: int = 5,
     on_event: EventCallback = None,
+    model_name: str | None = None,
 ) -> tuple[str, list]:
     """Run the analysis agent on workspace[alias]. Returns (answer_text, events)."""
     df = workspace.get(alias)
@@ -647,10 +758,11 @@ def analyze_question(
     messages = [{"role": "user", "content": user_msg}]
 
     client = _client()
+    model = model_name or settings.model_name
     for _ in range(max_steps):
         try:
             resp = client.messages.create(
-                model=settings.model_name,
+                model=model,
                 max_tokens=1024,
                 system=[{"type": "text", "text": ANALYZE_SYSTEM, "cache_control": {"type": "ephemeral"}}],
                 tools=ANALYZE_TOOLS,

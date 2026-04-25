@@ -1,5 +1,5 @@
-import AppShell from "@/components/layout/AppShell";
+import ResearchWorkbench from "@/components/research/ResearchWorkbench";
 
 export default function Home() {
-  return <AppShell />;
+  return <ResearchWorkbench />;
 }

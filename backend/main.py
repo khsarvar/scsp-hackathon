@@ -4,8 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from routers import (
     upload, profile, analyze, chat, export,
-    discover, agent_clean, hypotheses, stats,
+    discover, agent_clean, hypotheses, stats, research,
 )
+from db import init_db
+
+init_db()
 
 app = FastAPI(
     title="HealthLab Agent API",
@@ -33,6 +36,7 @@ app.include_router(discover.router, prefix="/api")
 app.include_router(agent_clean.router, prefix="/api")
 app.include_router(hypotheses.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
+app.include_router(research.router, prefix="/api")
 
 
 @app.get("/api/health")
