@@ -160,8 +160,10 @@ def fetch_dataset(
             "error": (
                 f"fetch_dataset returned 0 rows for dataset {dataset_id}. "
                 "Your `where` clause likely excludes everything. Try get_dataset_schema "
-                "to see real column values, or relax the filter (e.g. drop the state "
-                "predicate, widen the year range, or use ILIKE for fuzzy match)."
+                "to see real column values, then relax the filter (e.g. drop the state "
+                "predicate, widen the year range, or use LIKE with % wildcards for fuzzy "
+                "match, e.g. `dimension LIKE '%6 Month%'`). "
+                "Note: Socrata SoQL does NOT support ILIKE — use LIKE instead."
             ),
             "alias": alias,
             "rows": 0,
@@ -260,6 +262,22 @@ def merge_datasets(
             ),
         }
 
+    # Cartesian-product guard: if output is far larger than both inputs, the join
+    # key is likely non-unique on one or both sides (e.g. missing a season/year key).
+    max_input = max(len(l), len(r))
+    if len(out) > max_input * 10:
+        return {
+            "ok": False,
+            "error": (
+                f"Merge of `{left}` ({len(l)} rows) × `{right}` ({len(r)} rows) "
+                f"produced {len(out)} rows — looks like a cartesian product. "
+                "The join key is probably not unique on one or both sides. "
+                "You are likely missing a second key column (e.g. a season or year). "
+                "Add it to left_on/right_on (after normalizing the format if needed), "
+                "or aggregate_dataset first to make the key unique."
+            ),
+        }
+
     workspace.add(alias, out, {
         "source": f"merge({left}, {right}, how={how})",
         "parents": [left, right],
@@ -300,7 +318,17 @@ def aggregate_dataset(
     try:
         out = df.groupby(_resolve_keys(group_by), dropna=False).agg(agg).reset_index()
     except Exception as e:
-        return {"ok": False, "error": f"Aggregate failed: {e}"}
+        # Diagnose the most common cause: numeric agg (mean/sum) on a text column.
+        text_cols = {col for col, fn in agg.items() if fn in ("mean", "sum", "std", "var") and col in df.columns and df[col].dtype == object}
+        hint = ""
+        if text_cols:
+            hint = (
+                f" Columns {sorted(text_cols)} are text (dtype=object) — they cannot be "
+                "aggregated with mean/sum. Either use 'count' or 'first', or convert the "
+                "column to numeric first (e.g. coerce non-numeric values to NaN with a "
+                "cast cleaning op)."
+            )
+        return {"ok": False, "error": f"Aggregate failed: {e}.{hint}"}
     workspace.add(alias, out, {
         "source": f"agg({source} by {group_by})", "parents": [source],
     })

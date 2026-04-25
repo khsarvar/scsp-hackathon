@@ -78,7 +78,9 @@ Rules:
 - ALWAYS pass an explicit `limit` to fetch_dataset of at least 25000 (cap 100000). Socrata's server-side default is only 1000 rows, which is rarely enough. Use SoQL `where` to filter server-side (e.g. `where="year >= 2020 AND state = 'CA'"`) — that's how you keep result sizes manageable, NOT by lowering limit.
 - BE LIBERAL WITH FILTERS. When the question mentions a state, year, or category, first try fetching WITHOUT that filter (or with a wider one). Most CDC datasets store state names in unpredictable forms ("Florida" vs "FL" vs "florida") and may not include every jurisdiction. If you must filter, inspect the schema's sample values first. If a fetch returns 0 rows, that is a FAILURE — relax the filter and retry, do not finish on an empty dataset.
 - If two datasets are needed, fetch both with distinct aliases, then merge_datasets (or aggregate_dataset first if grains differ). A merge that returns 0 rows means the join keys don't overlap — inspect both sides before retrying.
-- Call finish when the workspace contains a single analysis-ready alias with > 0 rows. Pass that alias name. Never finish if the primary alias is empty.
+- SoQL WHERE syntax: use LIKE with % wildcards for fuzzy matching (e.g. `dimension LIKE '%6 Month%'`). Do NOT use ILIKE — Socrata does not support it and will return a 400 error.
+- Before calling finish, sanity-check the output row count. If a merge of A rows × B rows on key K produced far more rows than max(A, B), the join is a cartesian product — you are missing a key column (e.g. a year or season field). Fix the join to include all necessary keys before finishing. A correctly season-aligned join of ~13 sentinel states × ~10 seasons should produce ~130 rows, not 100,000.
+- Call finish when the workspace contains a single analysis-ready alias with > 0 rows and a plausible row count. Pass that alias name. Never finish if the primary alias is empty or the row count is suspicious.
 - Do not invent dataset ids. Only use ids returned by search_catalog.
 """
 

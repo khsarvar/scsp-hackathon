@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import StepCard from "./StepCard";
 import DataPreview from "./DataPreview";
 import ProfilingReport from "./ProfilingReport";
@@ -16,8 +16,7 @@ import ThoughtStream from "./ThoughtStream";
 import HypothesesPanel from "./HypothesesPanel";
 import StatsTestPanel from "./StatsTestPanel";
 import { useSession } from "@/hooks/useSession";
-import { runAnalysis, streamAgentClean } from "@/lib/api";
-import { consumeAgentStream } from "@/hooks/useAgentStream";
+import { runAnalysis } from "@/lib/api";
 
 export default function WorkspaceArea() {
   const { state, dispatch } = useSession();
@@ -29,10 +28,7 @@ export default function WorkspaceArea() {
     sessionId,
     error,
     discoverEvents,
-    cleanEvents,
   } = state;
-
-  const [agentCleaning, setAgentCleaning] = useState(false);
 
   const handleApproveAndAnalyze = useCallback(async () => {
     if (!sessionId) return;
@@ -44,22 +40,6 @@ export default function WorkspaceArea() {
       dispatch({ type: "SET_ERROR", error: (err as Error).message });
     }
   }, [sessionId, dispatch]);
-
-  const handleAgentClean = useCallback(async () => {
-    if (!sessionId || agentCleaning) return;
-    setAgentCleaning(true);
-    dispatch({ type: "CLEAN_RESET" });
-    try {
-      const res = await streamAgentClean(sessionId);
-      await consumeAgentStream(res, (event) => {
-        dispatch({ type: "CLEAN_EVENT", event });
-      });
-    } catch (err) {
-      dispatch({ type: "SET_ERROR", error: (err as Error).message });
-    } finally {
-      setAgentCleaning(false);
-    }
-  }, [sessionId, agentCleaning, dispatch]);
 
   // Discovery loading state
   if (step === "discovering") {
@@ -156,7 +136,7 @@ export default function WorkspaceArea() {
           stepNumber={1}
           status={step === "uploading" ? "loading" : "done"}
           collapsible
-          defaultOpen
+          defaultOpen={step === "uploading"}
           badge={`${uploadResult.row_count.toLocaleString()} rows`}
         >
           <DataPreview
@@ -174,7 +154,7 @@ export default function WorkspaceArea() {
           stepNumber={2}
           status={step === "profiling" ? "loading" : "done"}
           collapsible
-          defaultOpen={step === "profiling" || step === "planned"}
+          defaultOpen={step === "profiling"}
           badge={profileResult ? `${profileResult.col_count} columns` : undefined}
         >
           {profileResult && <ProfilingReport profile={profileResult} />}
@@ -204,61 +184,27 @@ export default function WorkspaceArea() {
         </StepCard>
       )}
 
-      {/* Step 3b: Agentic cleaning (optional, available once profile is ready) */}
+      {/* Optional research tools — collapsed by default, shown as one card */}
       {profileResult && (
         <StepCard
-          title="Agentic Cleaning"
-          status={agentCleaning ? "loading" : cleanEvents.length > 0 ? "done" : "pending"}
-          collapsible
-          defaultOpen={agentCleaning || cleanEvents.length > 0}
-          badge={cleanEvents.length > 0 ? `${cleanEvents.length} events` : undefined}
-        >
-          <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Watch the agent decide which cleaning op to apply at each step. Uses
-              the same op registry the analyze pipeline draws from, but you see the
-              reasoning live.
-            </p>
-            <button
-              onClick={handleAgentClean}
-              disabled={agentCleaning}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {agentCleaning ? "Cleaning..." : cleanEvents.length > 0 ? "Re-run agentic clean" : "Run agentic clean"}
-            </button>
-            <div className="rounded-lg bg-slate-50/60 border border-slate-100 p-3 max-h-64 overflow-y-auto">
-              <ThoughtStream
-                events={cleanEvents}
-                isStreaming={agentCleaning}
-                emptyHint="Click 'Run agentic clean' to stream the agent's cleaning reasoning."
-              />
-            </div>
-          </div>
-        </StepCard>
-      )}
-
-      {/* Step 3c: Hypotheses */}
-      {profileResult && (
-        <StepCard
-          title="Testable Hypotheses"
-          status={state.hypotheses.length > 0 ? "done" : "pending"}
+          title="Research Tools"
+          status="done"
           collapsible
           defaultOpen={state.hypotheses.length > 0}
-          badge={state.hypotheses.length > 0 ? `${state.hypotheses.length} ideas` : undefined}
         >
-          <HypothesesPanel />
-        </StepCard>
-      )}
+          <div className="divide-y divide-slate-100">
+            {/* Testable Hypotheses */}
+            <div className="pb-4 space-y-2">
+              <p className="text-xs font-semibold text-slate-600">Testable Hypotheses</p>
+              <HypothesesPanel />
+            </div>
 
-      {/* Step 3d: Free-form statistical question */}
-      {profileResult && (
-        <StepCard
-          title="Statistical Test (free-form)"
-          status="pending"
-          collapsible
-          defaultOpen={false}
-        >
-          <StatsTestPanel />
+            {/* Free-form statistical question */}
+            <div className="pt-4 space-y-2">
+              <p className="text-xs font-semibold text-slate-600">Statistical Test</p>
+              <StatsTestPanel />
+            </div>
+          </div>
         </StepCard>
       )}
 

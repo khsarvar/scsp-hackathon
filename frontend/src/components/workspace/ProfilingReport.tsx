@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import clsx from "clsx";
 import type { ProfileResponse, ColumnProfile } from "@/types";
 
@@ -61,9 +61,8 @@ export default function ProfilingReport({ profile }: ProfilingReportProps) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {profile.columns.map((col) => (
-              <>
+              <Fragment key={col.name}>
                 <tr
-                  key={col.name}
                   className={clsx(
                     "hover:bg-slate-50 cursor-pointer transition-colors",
                     expandedCol === col.name && "bg-slate-50"
@@ -92,7 +91,7 @@ export default function ProfilingReport({ profile }: ProfilingReportProps) {
                   </td>
                 </tr>
                 {expandedCol === col.name && col.outliers.length > 0 && (
-                  <tr key={`${col.name}-detail`} className="bg-rose-50">
+                  <tr className="bg-rose-50">
                     <td colSpan={6} className="px-4 py-2">
                       <p className="text-xs font-medium text-rose-700 mb-1">Outliers detected (IQR ×3):</p>
                       <div className="flex flex-wrap gap-2">
@@ -105,7 +104,7 @@ export default function ProfilingReport({ profile }: ProfilingReportProps) {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

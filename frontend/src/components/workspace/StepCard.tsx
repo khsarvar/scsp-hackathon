@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import clsx from "clsx";
 
 interface StepCardProps {
@@ -23,6 +23,11 @@ export default function StepCard({
   badge,
 }: StepCardProps) {
   const [open, setOpen] = useState(defaultOpen);
+
+  // Auto-open when a parent signals the card should become visible
+  useEffect(() => {
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
 
   return (
     <div
