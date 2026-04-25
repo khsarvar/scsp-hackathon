@@ -13,7 +13,6 @@ import type {
   UploadResponse,
   ProfileResponse,
   AnalyzeResponse,
-  SessionHistory,
   AgentEvent,
   Hypothesis,
   RunTestResponse,
@@ -121,34 +120,7 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  // Persist history to localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("healthlab_history");
-      if (saved) {
-        dispatch({ type: "LOAD_HISTORY", history: JSON.parse(saved) });
-      }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    if (state.uploadResult && state.sessionId) {
-      const entry: SessionHistory = {
-        session_id: state.sessionId,
-        filename: state.uploadResult.filename,
-        row_count: state.uploadResult.row_count,
-        col_count: state.uploadResult.col_count,
-        created_at: new Date().toISOString(),
-      };
-      const updated = [entry, ...state.history.filter(h => h.session_id !== state.sessionId)].slice(0, 10);
-      try {
-        localStorage.setItem("healthlab_history", JSON.stringify(updated));
-      } catch {}
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.uploadResult, state.sessionId]);
-
-  const reset = useCallback(() => dispatch({ type: "RESET" }), []);
+const reset = useCallback(() => dispatch({ type: "RESET" }), []);
 
   return (
     <SessionContext.Provider value={{ state, dispatch, reset }}>

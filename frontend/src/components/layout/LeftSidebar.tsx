@@ -293,41 +293,6 @@ export default function LeftSidebar() {
           />
         </div>
 
-        {/* Current session info */}
-        {state.uploadResult && (
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Current Session</p>
-            <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2.5">
-              <p className="text-xs font-medium text-teal-800 truncate">{state.uploadResult.filename}</p>
-              <p className="text-xs text-teal-600 mt-0.5">
-                {state.uploadResult.row_count.toLocaleString()} rows · {state.uploadResult.col_count} columns
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Analysis history */}
-        {state.history.length > 0 && (
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Recent Sessions</p>
-            <div className="space-y-1">
-              {state.history.slice(0, 5).map((h) => (
-                <div
-                  key={h.session_id}
-                  className={clsx(
-                    "px-3 py-2 rounded-lg text-xs cursor-default",
-                    h.session_id === state.sessionId
-                      ? "bg-teal-50 border border-teal-200"
-                      : "bg-slate-50 border border-slate-100"
-                  )}
-                >
-                  <p className="font-medium text-slate-700 truncate">{h.filename}</p>
-                  <p className="text-slate-400">{h.row_count} rows · {new Date(h.created_at).toLocaleDateString()}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Footer */}
