@@ -762,12 +762,14 @@ async def discover_run(
     return result
 
 
-async def analyze_run(question: str, workspace: Workspace, alias: str, emit: EventEmit, max_steps: int = 5) -> str:
+async def analyze_run(question: str, workspace: Workspace, alias: str, emit: EventEmit,
+                      max_steps: int = 5, analysis_plan: str = "") -> str:
     deps = AnalyzeDeps(workspace=workspace, alias=alias, emit=emit)
     user_msg = (
         f"Dataset alias: {alias}\n"
         f"Profile:\n{json.dumps(profile_df(workspace.get(alias)), default=str)}\n\n"
-        f"Question: {question}"
+        + (f"Analysis plan to follow:\n{analysis_plan}\n\n" if analysis_plan else "")
+        + f"Question: {question}"
     )
     result = await _run_with_events(
         analyze_agent,
@@ -809,10 +811,12 @@ async def code_analysis_run(
         ],
     }
 
+    plan_section = profile.get("analysis_plan", "")
     user_msg = (
         f"Research question: {question or '(none provided — perform a thorough exploratory analysis)'}\n\n"
         f"Cleaned dataset profile:\n{json.dumps(profile_brief, indent=2, default=str)}\n\n"
-        "Investigate the question with real statistical tests + charts. Save charts via `plt.savefig`."
+        + (f"Analysis plan to follow:\n{plan_section}\n\n" if plan_section else "")
+        + "Investigate the question with real statistical tests + charts. Save charts via `plt.savefig`."
     )
     result = await _run_with_events(
         code_agent, user_msg, deps, "code", request_limit=max_steps,
@@ -843,26 +847,30 @@ async def literature_run(question: str, emit: EventEmit, max_steps: int = 12) ->
     return result
 
 
-async def hypotheses_run(workspace: Workspace, alias: str, n: int = 4) -> list[Hypothesis]:
+async def hypotheses_run(workspace: Workspace, alias: str, n: int = 4,
+                         analysis_plan: str = "") -> list[Hypothesis]:
     df = workspace.get(alias)
     profile = profile_df(df)
     sample = df.sample(min(10, len(df)), random_state=0).to_dict(orient="records")
     user_msg = (
         f"Profile:\n{json.dumps(profile, default=str)}\n\n"
         f"Sample rows:\n{json.dumps(sample, default=str)}\n\n"
-        f"Propose {n} hypotheses."
+        + (f"Analysis plan context:\n{analysis_plan}\n\n" if analysis_plan else "")
+        + f"Propose {n} hypotheses."
     )
     result = await hypo_agent.run(user_msg)
     return result.output
 
 
-async def plan_run(dataset_context: str) -> str:
+async def plan_run(dataset_context: str, research_question: str = "") -> str:
+    rq_section = f"Research question: {research_question}\n\n" if research_question else ""
     prompt = (
+        f"{rq_section}"
         f"{dataset_context}\n\n"
-        "Based on this public health dataset, please propose a concise analysis plan with 5-7 numbered steps. "
-        "For each step, briefly explain what will be done and why it matters for public health research. "
-        "Focus on exploratory analysis appropriate for this dataset's structure. "
-        "Keep the plan actionable and specific to the columns present."
+        "Based on this public health dataset and the research question above, propose a concise "
+        "analysis plan with 5-7 numbered steps. For each step, briefly explain what will be done "
+        "and why it matters for this specific research question. Keep the plan actionable and "
+        "specific to the columns present."
     )
     result = await plan_agent.run(prompt)
     return result.output
@@ -885,11 +893,13 @@ async def findings_run(
     chart_specs: list[dict[str, Any]],
     stats: list[dict[str, Any]],
     cleaning_steps: list[str],
+    analysis_plan: str = "",
 ) -> FindingsReport:
     chart_summary = "\n".join(f"- {c['chart_type'].title()} chart: {c['title']}" for c in chart_specs)
     cleaning_summary = "\n".join(f"- {s}" for s in cleaning_steps)
+    plan_section = f"\nANALYSIS PLAN THAT WAS FOLLOWED:\n{analysis_plan}\n" if analysis_plan else ""
     prompt = f"""{dataset_context}
-
+{plan_section}
 CLEANING STEPS APPLIED:
 {cleaning_summary}
 
@@ -897,7 +907,7 @@ CHARTS GENERATED:
 {chart_summary}
 
 Please write a research analysis report with three sections:
-- findings: 3-5 paragraph plain-English narrative of the key findings. Describe what the data shows, notable patterns, group comparisons, and any correlations observed. Be specific about column names and values.
+- findings: 3-5 paragraph plain-English narrative of the key findings. Describe what the data shows, notable patterns, group comparisons, and any correlations observed. Be specific about column names and values. Where relevant, reference the analysis plan steps that were completed.
 - limitations: A bullet-pointed list (using •) of 4-6 limitations of this analysis. Include data quality issues, observational study limitations, confounders, and generalizability concerns.
 - follow_up: A numbered list of 5 specific follow-up research questions or experiments that would strengthen the analysis. Be concrete and reference the specific columns and findings.
 """

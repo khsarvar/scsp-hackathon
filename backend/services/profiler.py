@@ -91,7 +91,11 @@ def detect_outliers_iqr(series: pd.Series) -> list[dict[str, Any]]:
 
 
 def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
-    duplicate_rows = int(df.duplicated().sum())
+    try:
+        duplicate_rows = int(df.duplicated().sum())
+    except TypeError:
+        # columns with unhashable types (e.g. dicts) can't be hashed for dedup
+        duplicate_rows = 0
     columns = []
 
     for col in df.columns:

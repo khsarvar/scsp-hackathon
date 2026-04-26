@@ -76,10 +76,10 @@ def build_dataset_context(
     return "\n".join(lines)
 
 
-def generate_analysis_plan(dataset_context: str) -> str:
+def generate_analysis_plan(dataset_context: str, research_question: str = "") -> str:
     """Ask the model to propose a numbered analysis plan."""
     import asyncio
-    return asyncio.run(plan_run(dataset_context))
+    return asyncio.run(plan_run(dataset_context, research_question=research_question))
 
 
 def refine_analysis_plan(current_plan: str, instruction: str) -> str:
@@ -93,11 +93,13 @@ def generate_findings(
     chart_specs: list[dict[str, Any]],
     stats: list[dict[str, Any]],
     cleaning_steps: list[str],
+    analysis_plan: str = "",
 ) -> dict[str, str]:
     """Generate findings, limitations, and follow-up questions."""
     import asyncio
     try:
-        report = asyncio.run(findings_run(dataset_context, chart_specs, stats, cleaning_steps))
+        report = asyncio.run(findings_run(dataset_context, chart_specs, stats,
+                                          cleaning_steps, analysis_plan=analysis_plan))
         return {
             "findings": report.findings,
             "limitations": report.limitations,

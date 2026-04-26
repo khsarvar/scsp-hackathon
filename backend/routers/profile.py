@@ -80,7 +80,7 @@ def profile_dataset(req: ProfileRequest):
 
     # Generate AI analysis plan
     try:
-        analysis_plan = generate_analysis_plan(dataset_context)
+        analysis_plan = generate_analysis_plan(dataset_context, research_question=sess.research_question or "")
     except Exception as e:
         analysis_plan = f"_Analysis plan could not be generated: {e}_"
 

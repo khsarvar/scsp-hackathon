@@ -71,9 +71,11 @@ async def stats_ask(req: AskRequest):
 
     _ensure_workspace(sess)
     alias = sess.primary_alias
+    analysis_plan = sess.profile.get("analysis_plan", "") if sess.profile else ""
 
     def run(emit):
-        answer, events = analyze_question(req.question, sess.workspace, alias, on_event=emit)
+        answer, events = analyze_question(req.question, sess.workspace, alias,
+                                          on_event=emit, analysis_plan=analysis_plan)
         sess.analyze_events = list(events)
         return {
             "ok": True,

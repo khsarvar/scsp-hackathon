@@ -42,7 +42,8 @@ def hypotheses(req: HypothesesRequest):
         sess.workspace.add("main", df, {"source": f"upload:{sess.filename}"})
         sess.primary_alias = "main"
 
-    raw = generate_hypotheses(sess.workspace, sess.primary_alias, n=req.n)
+    analysis_plan = sess.profile.get("analysis_plan", "") if sess.profile else ""
+    raw = generate_hypotheses(sess.workspace, sess.primary_alias, n=req.n, analysis_plan=analysis_plan)
     sess.hypotheses = list(raw)
 
     return HypothesesResponse(

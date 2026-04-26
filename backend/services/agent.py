@@ -82,9 +82,10 @@ def auto_clean(
     return events
 
 
-def generate_hypotheses(workspace: Workspace, alias: str, n: int = 4) -> list[dict]:
+def generate_hypotheses(workspace: Workspace, alias: str, n: int = 4,
+                        analysis_plan: str = "") -> list[dict]:
     try:
-        result: list[Hypothesis] = asyncio.run(hypotheses_run(workspace, alias, n=n))
+        result: list[Hypothesis] = asyncio.run(hypotheses_run(workspace, alias, n=n, analysis_plan=analysis_plan))
     except Exception as e:
         return [{"question": "Failed to generate hypotheses", "rationale": str(e)}]
     return [h.model_dump() for h in result]
@@ -96,11 +97,13 @@ def analyze_question(
     alias: str,
     max_steps: int = 5,
     on_event: EventCallback = None,
+    analysis_plan: str = "",
 ) -> tuple[str, list]:
     """Run the analysis agent on workspace[alias]. Returns (answer_text, events)."""
     events: list = []
     emit = _make_emitter(events, on_event)
-    answer = asyncio.run(analyze_run(question, workspace, alias, emit, max_steps=max_steps))
+    answer = asyncio.run(analyze_run(question, workspace, alias, emit,
+                                     max_steps=max_steps, analysis_plan=analysis_plan))
     return answer, events
 
 
