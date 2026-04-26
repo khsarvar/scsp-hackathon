@@ -136,3 +136,8 @@ on success and failure paths.
 - `backend/routers/hypotheses.py` and `backend/routers/stats.py` exist but
   have no UI in the current build; they're reachable via OpenAPI for direct
   exercise.
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE). Copyright (c) 2026 Akbar Khamidov; all
+patent rights reserved to the copyright owner (see [NOTICE](NOTICE)).
