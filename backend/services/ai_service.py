@@ -28,8 +28,16 @@ def build_dataset_context(
     profile: dict[str, Any],
     stats: list[dict[str, Any]],
     sample_rows: list[dict[str, Any]],
+    *,
+    research_question: str | None = None,
+    analysis_result: dict[str, Any] | None = None,
+    hypotheses: list[dict[str, Any]] | None = None,
+    test_history: list[dict[str, Any]] | None = None,
+    workspace_summary: list[dict[str, Any]] | None = None,
+    literature_question: str | None = None,
+    literature_summary: str | None = None,
 ) -> str:
-    """Build a compact dataset context string (~2000 tokens max)."""
+    """Build a compact dataset context string for the chat LLM."""
     lines = []
     lines.append("<dataset_context>")
     lines.append(f"Shape: {profile['row_count']} rows × {profile['col_count']} columns")
@@ -73,6 +81,93 @@ def build_dataset_context(
                 lines.append("| " + " | ".join(str(row.get(h, "")) for h in headers) + " |")
 
     lines.append("</dataset_context>")
+
+    if research_question:
+        lines.append("")
+        lines.append("<research_question>")
+        lines.append(research_question)
+        lines.append("</research_question>")
+
+    if analysis_result and any(
+        analysis_result.get(k) for k in ["summary", "findings", "limitations", "follow_up"]
+    ):
+        lines.append("")
+        lines.append("<analysis_findings>")
+        for key, header in [
+            ("summary", "## Summary"),
+            ("findings", "## Key Findings"),
+            ("limitations", "## Limitations"),
+            ("follow_up", "## Suggested Follow-Up"),
+        ]:
+            val = analysis_result.get(key)
+            if val:
+                lines.append(header)
+                lines.append(val)
+                lines.append("")
+        lines.append("</analysis_findings>")
+
+    if analysis_result and analysis_result.get("cleaning_steps"):
+        lines.append("")
+        lines.append("<cleaning_steps>")
+        for step in analysis_result["cleaning_steps"][:20]:
+            lines.append(f"- {step}")
+        lines.append("</cleaning_steps>")
+
+    if hypotheses:
+        lines.append("")
+        lines.append("<hypotheses>")
+        for i, h in enumerate(hypotheses[:5], 1):
+            question = h.get("question", "")
+            variables = ", ".join(h.get("variables") or [])
+            rationale = h.get("rationale", "")
+            lines.append(f"{i}. **{question}**")
+            if variables:
+                lines.append(f"   Variables: {variables}")
+            if rationale:
+                lines.append(f"   Rationale: {rationale}")
+        lines.append("</hypotheses>")
+
+    if test_history:
+        lines.append("")
+        lines.append("<test_results>")
+        count = 0
+        for entry in test_history:
+            if count >= 10:
+                break
+            result = entry.get("result", {})
+            if result.get("error"):
+                continue
+            test_name = result.get("test", entry.get("test", "?"))
+            p_val = result.get("p_value")
+            p_str = f"{p_val:.4f}" if isinstance(p_val, (int, float)) else str(p_val) if p_val is not None else "?"
+            interpretation = result.get("interpretation", "")
+            lines.append(f"- {test_name} (p={p_str}): {interpretation}")
+            count += 1
+        lines.append("</test_results>")
+
+    if workspace_summary and len(workspace_summary) > 1:
+        lines.append("")
+        lines.append("<workspace>")
+        lines.append(f"{len(workspace_summary)} datasets loaded:")
+        for frame in workspace_summary:
+            alias = frame.get("alias", "?")
+            rows = frame.get("rows", "?")
+            cols = frame.get("cols", [])
+            col_preview = ", ".join(cols[:8])
+            if len(cols) > 8:
+                col_preview += "..."
+            lines.append(f"- {alias}: {rows} rows, columns: {col_preview}")
+        lines.append("</workspace>")
+
+    if literature_summary:
+        lines.append("")
+        lines.append("<literature_review>")
+        if literature_question:
+            lines.append(f"Question: {literature_question}")
+            lines.append("")
+        lines.append(literature_summary)
+        lines.append("</literature_review>")
+
     return "\n".join(lines)
 
 

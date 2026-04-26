@@ -344,7 +344,9 @@ When responding:
 - Clearly distinguish between correlation and causation
 - Always mention data quality limitations
 - Suggest specific, actionable follow-up research questions
-- Format responses in clean markdown when appropriate"""
+- Format responses in clean markdown when appropriate
+
+When session context is provided (research question, findings, hypotheses, test results, literature review), use it to give precise, grounded answers that build on the work already done rather than starting from scratch."""
 
 
 # ---------- Agent instantiation ----------

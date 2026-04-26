@@ -35,7 +35,19 @@ async def chat(req: ChatRequest):
     if sess.analysis_result:
         stats = sess.analysis_result.get("stats", [])
     sample_rows = sess.preview_rows[:5]
-    dataset_context = build_dataset_context(profile, stats, sample_rows) if profile else ""
+    workspace_summary = sess.workspace.summary() if sess.workspace else None
+    dataset_context = build_dataset_context(
+        profile,
+        stats,
+        sample_rows,
+        research_question=sess.research_question,
+        analysis_result=sess.analysis_result,
+        hypotheses=sess.hypotheses or None,
+        test_history=sess.test_history or None,
+        workspace_summary=workspace_summary,
+        literature_question=sess.literature_question,
+        literature_summary=sess.literature_summary,
+    ) if profile else ""
 
     # Update chat history
     new_history = sess.chat_history + [{"role": "user", "content": req.message}]
