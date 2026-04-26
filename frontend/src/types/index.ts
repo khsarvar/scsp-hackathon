@@ -55,7 +55,8 @@ export interface ProfileResponse {
   col_count: number;
   duplicate_rows: number;
   columns: ColumnProfile[];
-  analysis_plan: string;
+  analysis_plan: string | null;
+  charts: ChartSpec[];
 }
 
 export interface StatRow {
@@ -222,10 +223,16 @@ export type AppStep =
   | "join_decision"
   | "preview"
   | "profiling"
+  | "charted"
   | "planned"
   | "analyzing"
   | "results"
   | "error";
+
+export interface PipelineConfig {
+  runAnalysis: boolean;
+  runLiterature: boolean;
+}
 
 export type WorkspaceTab = "discover" | "literature" | "plan";
 
@@ -272,4 +279,6 @@ export interface AppState {
   literatureResult: LiteratureResult | null;
   // UI
   activeTab: WorkspaceTab;
+  // Pipeline opt-ins
+  pipelineConfig: PipelineConfig;
 }

@@ -105,7 +105,10 @@ export default function LeftSidebar() {
     dispatch({ type: "SET_UPLOAD", payload: result });
     dispatch({ type: "SET_STEP", step: "profiling" });
     try {
-      const profile = await profileDataset(result.session_id);
+      const profile = await profileDataset(
+        result.session_id,
+        state.pipelineConfig.runAnalysis,
+      );
       dispatch({ type: "SET_PROFILE", payload: profile });
     } catch (err) {
       dispatch({ type: "SET_ERROR", error: (err as Error).message });
@@ -125,30 +128,31 @@ export default function LeftSidebar() {
     dispatch({ type: "LITERATURE_RESET" });
     dispatch({ type: "SET_STEP", step: "recommending" });
 
-    // Kick off literature review in parallel — same research question, no session yet.
-    const literaturePromise = (async () => {
-      let result: LiteratureResult | null = null;
-      try {
-        const litRes = await streamLiterature(q, null);
-        await consumeAgentStream(litRes, (event: AgentEvent) => {
-          dispatch({ type: "LITERATURE_EVENT", event });
-          if (event.type === "result") {
-            const data = (event as { data: Record<string, unknown> }).data;
-            if (data.ok && typeof data.summary === "string") {
-              result = {
-                question: (data.question as string) ?? q,
-                summary: data.summary,
-                articles: (data.articles as LiteratureResult["articles"]) ?? [],
-              };
-              dispatch({ type: "SET_LITERATURE_RESULT", result });
-            }
+    const literaturePromise = state.pipelineConfig.runLiterature
+      ? (async () => {
+          let result: LiteratureResult | null = null;
+          try {
+            const litRes = await streamLiterature(q, null);
+            await consumeAgentStream(litRes, (event: AgentEvent) => {
+              dispatch({ type: "LITERATURE_EVENT", event });
+              if (event.type === "result") {
+                const data = (event as { data: Record<string, unknown> }).data;
+                if (data.ok && typeof data.summary === "string") {
+                  result = {
+                    question: (data.question as string) ?? q,
+                    summary: data.summary,
+                    articles: (data.articles as LiteratureResult["articles"]) ?? [],
+                  };
+                  dispatch({ type: "SET_LITERATURE_RESULT", result });
+                }
+              }
+            });
+          } catch {
+            // non-fatal
           }
-        });
-      } catch {
-        // non-fatal
-      }
-      return result;
-    })();
+          return result;
+        })()
+      : Promise.resolve(null);
 
     try {
       const recResult = await recommendDatasets(q);
@@ -215,6 +219,41 @@ export default function LeftSidebar() {
               busy && "opacity-50 cursor-not-allowed"
             )}
           />
+          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-2 space-y-1.5">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+              Add to run
+            </p>
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.pipelineConfig.runAnalysis}
+                disabled={busy}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_PIPELINE_CONFIG",
+                    config: { runAnalysis: e.target.checked },
+                  })
+                }
+                className="rounded border-slate-300 text-teal-500 focus:ring-teal-400"
+              />
+              LLM analysis (findings, code agent)
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.pipelineConfig.runLiterature}
+                disabled={busy}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_PIPELINE_CONFIG",
+                    config: { runLiterature: e.target.checked },
+                  })
+                }
+                className="rounded border-slate-300 text-teal-500 focus:ring-teal-400"
+              />
+              Literature review (PubMed)
+            </label>
+          </div>
           <button
             onClick={handleDiscover}
             disabled={busy || !discoverQuestion.trim()}
@@ -225,7 +264,7 @@ export default function LeftSidebar() {
                 : "bg-slate-100 text-slate-300 cursor-not-allowed"
             )}
           >
-            {discovering ? "Searching open-data catalogs..." : "Discover datasets"}
+            {discovering ? "Searching open-data catalogs..." : "Run pipeline"}
           </button>
           {discoverError && (
             <p className="mt-1.5 text-xs text-red-500">{discoverError}</p>

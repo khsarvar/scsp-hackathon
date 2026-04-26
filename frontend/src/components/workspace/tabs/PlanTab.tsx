@@ -39,6 +39,18 @@ export default function PlanTab() {
     );
   }
 
+  if (!profileResult.analysis_plan) {
+    return (
+      <div className="text-sm text-slate-400 px-2 py-8 space-y-2">
+        <p>No LLM analysis was requested for this run.</p>
+        <p className="text-xs text-slate-400">
+          Check &quot;LLM analysis&quot; in the sidebar before running the pipeline to
+          generate an analysis plan and findings.
+        </p>
+      </div>
+    );
+  }
+
   const totalCharts = (analysisResult?.steps || []).reduce(
     (n, s) => n + s.charts.length,
     0,

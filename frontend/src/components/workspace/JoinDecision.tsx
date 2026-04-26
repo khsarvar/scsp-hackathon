@@ -102,7 +102,10 @@ export default function JoinDecision() {
     dispatch({ type: "SET_UPLOAD", payload: upload });
     dispatch({ type: "SET_STEP", step: "profiling" });
     try {
-      const profile = await profileDataset(upload.session_id);
+      const profile = await profileDataset(
+        upload.session_id,
+        state.pipelineConfig.runAnalysis,
+      );
       dispatch({ type: "SET_PROFILE", payload: profile });
     } catch (err) {
       dispatch({ type: "SET_ERROR", error: (err as Error).message });

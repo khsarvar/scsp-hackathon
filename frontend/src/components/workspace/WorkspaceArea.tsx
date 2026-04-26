@@ -16,6 +16,7 @@ const STEP_TO_TAB: Record<string, WorkspaceTab> = {
   join_decision: "discover",
   preview: "discover",
   profiling: "discover",
+  charted: "discover",
   planned: "plan",
   analyzing: "plan",
   results: "plan",

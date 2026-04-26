@@ -6,6 +6,7 @@ import DataPreview from "../DataPreview";
 import ProfilingReport from "../ProfilingReport";
 import JoinDecision from "../JoinDecision";
 import DatasetPicker from "../DatasetPicker";
+import ChartGallery from "../ChartGallery";
 import { useSession } from "@/hooks/useSession";
 import { streamDiscoverWithSelection } from "@/lib/api";
 import { consumeAgentStream } from "@/hooks/useAgentStream";
@@ -38,7 +39,10 @@ export default function DiscoverTab() {
     dispatch({ type: "SET_UPLOAD", payload: upload });
     dispatch({ type: "SET_STEP", step: "profiling" });
     try {
-      const profile = await profileDataset(upload.session_id);
+      const profile = await profileDataset(
+        upload.session_id,
+        state.pipelineConfig.runAnalysis,
+      );
       dispatch({ type: "SET_PROFILE", payload: profile });
     } catch (err) {
       dispatch({ type: "SET_ERROR", error: (err as Error).message });
@@ -230,9 +234,26 @@ export default function DiscoverTab() {
           {step === "profiling" && (
             <div className="flex items-center gap-3 py-4">
               <div className="w-5 h-5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm text-slate-500">Profiling dataset and generating analysis plan...</p>
+              <p className="text-sm text-slate-500">
+                {state.pipelineConfig.runAnalysis
+                  ? "Profiling dataset and generating analysis plan..."
+                  : "Profiling dataset and building exploratory charts..."}
+              </p>
             </div>
           )}
+        </StepCard>
+      )}
+
+      {profileResult && profileResult.charts && profileResult.charts.length > 0 && (
+        <StepCard
+          title="Exploratory Charts"
+          stepNumber={3}
+          status="done"
+          collapsible
+          defaultOpen
+          badge={`${profileResult.charts.length} charts`}
+        >
+          <ChartGallery charts={profileResult.charts} />
         </StepCard>
       )}
     </div>

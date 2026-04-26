@@ -37,11 +37,17 @@ export async function uploadFromUrl(url: string, filename: string): Promise<Uplo
   return uploadCSV(file);
 }
 
-export async function profileDataset(sessionId: string): Promise<ProfileResponse> {
+export async function profileDataset(
+  sessionId: string,
+  includeAnalysisPlan = false,
+): Promise<ProfileResponse> {
   const res = await fetch(`${BASE}/profile`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({
+      session_id: sessionId,
+      include_analysis_plan: includeAnalysisPlan,
+    }),
   });
   return handleResponse<ProfileResponse>(res);
 }

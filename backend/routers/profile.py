@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from models.schemas import ProfileRequest
 from models import session as session_store
 from services.profiler import profile_dataframe
+from services.analyzer import build_chart_specs
 from services.ai_service import build_dataset_context, generate_analysis_plan
 
 router = APIRouter()
@@ -75,16 +76,24 @@ def profile_dataset(req: ProfileRequest):
                 "p75": None,
             })
 
-    sample_rows = sess.preview_rows[:5]
-    dataset_context = build_dataset_context(profile, stats, sample_rows)
+    chart_specs = build_chart_specs(df, profile)
 
-    # Generate AI analysis plan
-    try:
-        analysis_plan = generate_analysis_plan(dataset_context, research_question=sess.research_question or "")
-    except Exception as e:
-        analysis_plan = f"_Analysis plan could not be generated: {e}_"
+    analysis_plan: str | None = None
+    if req.include_analysis_plan:
+        sample_rows = sess.preview_rows[:5]
+        dataset_context = build_dataset_context(profile, stats, sample_rows)
+        try:
+            analysis_plan = generate_analysis_plan(
+                dataset_context,
+                research_question=sess.research_question or "",
+            )
+        except Exception as e:
+            analysis_plan = f"_Analysis plan could not be generated: {e}_"
 
-    session_store.update_session(req.session_id, profile={**profile, "analysis_plan": analysis_plan})
+    session_store.update_session(
+        req.session_id,
+        profile={**profile, "analysis_plan": analysis_plan},
+    )
 
     return {
         "session_id": req.session_id,
@@ -93,4 +102,5 @@ def profile_dataset(req: ProfileRequest):
         "duplicate_rows": profile["duplicate_rows"],
         "columns": profile["columns"],
         "analysis_plan": analysis_plan,
+        "charts": chart_specs,
     }

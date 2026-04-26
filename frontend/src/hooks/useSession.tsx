@@ -20,6 +20,7 @@ import type {
   SessionHistory,
   DiscoverCandidate,
   DatasetRecommendation,
+  PipelineConfig,
 } from "@/types";
 
 type Action =
@@ -46,7 +47,8 @@ type Action =
   | { type: "SET_JOIN_CANDIDATES"; candidates: DiscoverCandidate[]; suggestedAlias: string; sessionId: string }
   | { type: "CLEAR_JOIN_CANDIDATES" }
   | { type: "SET_RECOMMENDATIONS"; recommendations: DatasetRecommendation[]; question: string }
-  | { type: "CLEAR_RECOMMENDATIONS" };
+  | { type: "CLEAR_RECOMMENDATIONS" }
+  | { type: "SET_PIPELINE_CONFIG"; config: Partial<PipelineConfig> };
 
 const initialState: AppState = {
   step: "idle",
@@ -68,6 +70,7 @@ const initialState: AppState = {
   literatureEvents: [],
   literatureResult: null,
   activeTab: "discover",
+  pipelineConfig: { runAnalysis: false, runLiterature: false },
 };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -97,7 +100,7 @@ function reducer(state: AppState, action: Action): AppState {
     case "SET_PROFILE":
       return {
         ...state,
-        step: "planned",
+        step: state.pipelineConfig.runAnalysis ? "planned" : "charted",
         profileResult: action.payload,
         error: null,
       };
@@ -111,7 +114,11 @@ function reducer(state: AppState, action: Action): AppState {
     case "SET_ERROR":
       return { ...state, step: "error", error: action.error };
     case "RESET":
-      return { ...initialState, history: state.history };
+      return {
+        ...initialState,
+        history: state.history,
+        pipelineConfig: state.pipelineConfig,
+      };
     case "LOAD_HISTORY":
       return { ...state, history: action.history };
     case "DISCOVER_EVENT":
@@ -175,6 +182,11 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         recommendations: null,
         recommendationQuestion: null,
+      };
+    case "SET_PIPELINE_CONFIG":
+      return {
+        ...state,
+        pipelineConfig: { ...state.pipelineConfig, ...action.config },
       };
     default:
       return state;

@@ -55,6 +55,7 @@ class UploadResponse(BaseModel):
 
 class ProfileRequest(BaseModel):
     session_id: str
+    include_analysis_plan: bool = False
 
 
 class ProfileResponse(BaseModel):
@@ -63,7 +64,8 @@ class ProfileResponse(BaseModel):
     col_count: int
     duplicate_rows: int
     columns: list[ColumnProfile]
-    analysis_plan: str
+    analysis_plan: Optional[str] = None
+    charts: list["ChartSpec"] = []
 
 
 class AnalyzeRequest(BaseModel):
