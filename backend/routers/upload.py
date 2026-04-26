@@ -72,4 +72,9 @@ async def upload_csv(file: UploadFile = File(...)):
         "columns": df.columns.tolist(),
         "preview_rows": preview_rows,
         "file_size_bytes": len(contents),
+        "provenance": {
+            "type": "upload",
+            "filename": file.filename,
+            "sources": [{"alias": "main", "source_str": f"upload:{file.filename}"}],
+        },
     }

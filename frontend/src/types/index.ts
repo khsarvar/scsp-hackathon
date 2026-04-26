@@ -20,6 +20,24 @@ export interface ColumnProfile {
   outliers: OutlierInfo[];
 }
 
+export interface DataSource {
+  alias: string;
+  source_str: string;
+  cdc_id?: string | null;
+  cdc_url?: string | null;
+  soql_filter?: string | null;
+  soql_select?: string | null;
+  parents?: string[];
+}
+
+export interface DataProvenance {
+  type: "upload" | "cdc_discover";
+  filename?: string | null;
+  research_question?: string | null;
+  primary_alias?: string | null;
+  sources: DataSource[];
+}
+
 export interface UploadResponse {
   session_id: string;
   filename: string;
@@ -28,6 +46,7 @@ export interface UploadResponse {
   columns: string[];
   preview_rows: Record<string, unknown>[];
   file_size_bytes: number;
+  provenance?: DataProvenance | null;
 }
 
 export interface ProfileResponse {
@@ -156,6 +175,7 @@ export interface DiscoverResultPayload {
   columns: string[];
   preview_rows: Record<string, unknown>[];
   file_size_bytes: number;
+  provenance?: DataProvenance | null;
 }
 
 // App state

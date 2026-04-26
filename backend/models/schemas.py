@@ -24,6 +24,24 @@ class ColumnProfile(BaseModel):
     outliers: list[OutlierInfo] = []
 
 
+class DataSource(BaseModel):
+    alias: str
+    source_str: str
+    cdc_id: Optional[str] = None
+    cdc_url: Optional[str] = None
+    soql_filter: Optional[str] = None
+    soql_select: Optional[str] = None
+    parents: list[str] = []
+
+
+class DataProvenance(BaseModel):
+    type: str  # 'upload' | 'cdc_discover'
+    filename: Optional[str] = None
+    research_question: Optional[str] = None
+    primary_alias: Optional[str] = None
+    sources: list[DataSource] = []
+
+
 class UploadResponse(BaseModel):
     session_id: str
     filename: str
@@ -32,6 +50,7 @@ class UploadResponse(BaseModel):
     columns: list[str]
     preview_rows: list[dict[str, Any]]
     file_size_bytes: int
+    provenance: Optional[DataProvenance] = None
 
 
 class ProfileRequest(BaseModel):

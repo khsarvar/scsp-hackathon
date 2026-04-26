@@ -72,6 +72,21 @@ async def discover_datasets(req: DiscoverRequest):
         ]
         sess.preview_rows = preview_rows
 
+        # Build provenance from workspace metadata
+        sources = []
+        for alias, meta in ws.meta.items():
+            cdc_id = meta.get("id")
+            soql = meta.get("soql") or {}
+            sources.append({
+                "alias": alias,
+                "source_str": meta.get("source", alias),
+                "cdc_id": cdc_id,
+                "cdc_url": f"https://data.cdc.gov/resource/{cdc_id}" if cdc_id else None,
+                "soql_filter": soql.get("where"),
+                "soql_select": soql.get("select"),
+                "parents": meta.get("parents", []),
+            })
+
         return {
             "ok": True,
             "session_id": sess.session_id,
@@ -82,6 +97,13 @@ async def discover_datasets(req: DiscoverRequest):
             "columns": [str(c) for c in df.columns.tolist()],
             "preview_rows": preview_rows,
             "file_size_bytes": len(contents),
+            "provenance": {
+                "type": "cdc_discover",
+                "filename": nice_filename,
+                "research_question": req.question,
+                "primary_alias": primary,
+                "sources": sources,
+            },
         }
 
     return sse_response(stream_agent_events(run))

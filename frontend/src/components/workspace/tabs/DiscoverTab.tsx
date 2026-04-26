@@ -66,6 +66,7 @@ export default function DiscoverTab() {
             rows={uploadResult.preview_rows}
             columns={uploadResult.columns}
             totalRows={uploadResult.row_count}
+            provenance={uploadResult.provenance}
           />
         </StepCard>
       )}

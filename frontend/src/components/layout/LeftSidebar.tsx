@@ -173,6 +173,7 @@ export default function LeftSidebar() {
           columns: payload.columns,
           preview_rows: payload.preview_rows,
           file_size_bytes: payload.file_size_bytes,
+          provenance: payload.provenance,
         };
         await profileAfterUpload(upload);
       } else {
