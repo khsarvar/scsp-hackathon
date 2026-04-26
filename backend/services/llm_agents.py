@@ -624,6 +624,7 @@ async def code_run_python(
         "ok": result["ok"],
     }
     ctx.deps.steps.append(step)
+    ctx.deps.emit({"type": "code_step", "step": step})
 
     if result["ok"]:
         summary = (

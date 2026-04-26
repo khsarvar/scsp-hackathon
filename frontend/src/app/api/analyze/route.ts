@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { BACKEND_URL } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
@@ -11,18 +11,17 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify(body),
     });
   } catch {
-    return NextResponse.json(
-      { detail: "Cannot reach backend. Is the FastAPI server running on port 8000?" },
-      { status: 503 }
+    return new Response(
+      JSON.stringify({ detail: "Cannot reach backend. Is the FastAPI server running on port 8000?" }),
+      { status: 503, headers: { "Content-Type": "application/json" } }
     );
   }
-  const text = await res.text();
-  try {
-    return NextResponse.json(JSON.parse(text), { status: res.status });
-  } catch {
-    return NextResponse.json(
-      { detail: `Backend error (${res.status}): ${text.slice(0, 300)}` },
-      { status: res.status || 500 }
-    );
-  }
+  return new Response(res.body, {
+    status: res.status,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

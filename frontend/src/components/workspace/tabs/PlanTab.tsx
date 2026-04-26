@@ -12,20 +12,36 @@ import ExportButton from "../ExportButton";
 import ChartGallery from "../ChartGallery";
 import StatsPanel from "../StatsPanel";
 import { useSession } from "@/hooks/useSession";
-import { runAnalysis } from "@/lib/api";
+import { streamAnalysis } from "@/lib/api";
+import { consumeAgentStream } from "@/hooks/useAgentStream";
+import type { AnalyzeResponse, CodeStep } from "@/types";
 
 export default function PlanTab() {
   const { state, dispatch } = useSession();
-  const { step, profileResult, analysisResult, sessionId, uploadResult } = state;
+  const { step, profileResult, analysisResult, sessionId, uploadResult, codeStepEvents } = state;
 
   const handleApproveAndAnalyze = useCallback(async () => {
     if (!sessionId) return;
+    dispatch({ type: "CODE_STEPS_RESET" });
     dispatch({ type: "SET_STEP", step: "analyzing" });
     try {
-      // Pass the original research question if we have one (e.g. from CDC discover).
       const question = state.literatureResult?.question || null;
-      const result = await runAnalysis(sessionId, question);
-      dispatch({ type: "SET_ANALYSIS", payload: result });
+      const res = await streamAnalysis(sessionId, question);
+      await consumeAgentStream(res, (event) => {
+        if (event.type === "code_step") {
+          const e = event as unknown as { type: "code_step"; step: CodeStep };
+          dispatch({ type: "CODE_STEP_EVENT", step: e.step });
+        } else if (event.type === "result") {
+          const data = (event as { type: "result"; data: Record<string, unknown> }).data;
+          if (data.ok === false) {
+            dispatch({ type: "SET_ERROR", error: String(data.error ?? "Analysis failed.") });
+          } else {
+            dispatch({ type: "SET_ANALYSIS", payload: data as unknown as AnalyzeResponse });
+          }
+        } else if (event.type === "error") {
+          dispatch({ type: "SET_ERROR", error: String((event as { message?: string }).message ?? "Analysis error.") });
+        }
+      });
     } catch (err) {
       dispatch({ type: "SET_ERROR", error: (err as Error).message });
     }
@@ -78,12 +94,17 @@ export default function PlanTab() {
 
       {step === "analyzing" && (
         <StepCard title="Agent Working" status="loading" collapsible={false}>
-          <div className="flex items-center gap-3 py-2">
-            <div className="w-5 h-5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm text-slate-500">
-              The agent is writing and executing Python to investigate your question. This
-              may take a minute.
-            </p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <div className="w-3 h-3 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
+              {codeStepEvents.length === 0
+                ? <span>Writing and executing Python to investigate your question…</span>
+                : <span>{codeStepEvents.length} step{codeStepEvents.length !== 1 ? "s" : ""} completed — working on next…</span>
+              }
+            </div>
+            {codeStepEvents.length > 0 && sessionId && (
+              <AgentRunPanel steps={codeStepEvents} sessionId={sessionId} />
+            )}
           </div>
         </StepCard>
       )}

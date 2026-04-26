@@ -13,6 +13,7 @@ import type {
   ProfileResponse,
   AnalyzeResponse,
   AgentEvent,
+  CodeStep,
   Hypothesis,
   RunTestResponse,
   LiteratureResult,
@@ -37,6 +38,8 @@ type Action =
   | { type: "CLEAN_RESET" }
   | { type: "ASK_EVENT"; event: AgentEvent }
   | { type: "ASK_RESET" }
+  | { type: "CODE_STEP_EVENT"; step: CodeStep }
+  | { type: "CODE_STEPS_RESET" }
   | { type: "SET_HYPOTHESES"; hypotheses: Hypothesis[] }
   | { type: "SET_TEST_RESULT"; result: RunTestResponse }
   | { type: "LITERATURE_EVENT"; event: AgentEvent }
@@ -61,6 +64,7 @@ const initialState: AppState = {
   discoverEvents: [],
   cleanEvents: [],
   askEvents: [],
+  codeStepEvents: [],
   hypotheses: [],
   lastTestResult: null,
   recommendations: null,
@@ -109,6 +113,7 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         step: "results",
         analysisResult: action.payload,
+        codeStepEvents: [],
         error: null,
       };
     case "SET_ERROR":
@@ -140,6 +145,10 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, askEvents: [...state.askEvents, action.event] };
     case "ASK_RESET":
       return { ...state, askEvents: [] };
+    case "CODE_STEP_EVENT":
+      return { ...state, codeStepEvents: [...state.codeStepEvents, action.step] };
+    case "CODE_STEPS_RESET":
+      return { ...state, codeStepEvents: [] };
     case "SET_HYPOTHESES":
       return { ...state, hypotheses: action.hypotheses };
     case "SET_TEST_RESULT":

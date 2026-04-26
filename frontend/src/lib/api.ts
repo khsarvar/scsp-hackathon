@@ -1,7 +1,6 @@
 import type {
   UploadResponse,
   ProfileResponse,
-  AnalyzeResponse,
   ChatMessage,
   HypothesesResponse,
   RunTestResponse,
@@ -52,16 +51,19 @@ export async function profileDataset(
   return handleResponse<ProfileResponse>(res);
 }
 
-export async function runAnalysis(
+/** Stream the code-analysis agent. Each completed step arrives as a `code_step`
+ *  SSE event; the final `result` event carries the full AnalyzeResponse payload. */
+export async function streamAnalysis(
   sessionId: string,
   question?: string | null,
-): Promise<AnalyzeResponse> {
+): Promise<Response> {
   const res = await fetch(`${BASE}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, question: question ?? null }),
   });
-  return handleResponse<AnalyzeResponse>(res);
+  if (!res.ok) throw new Error(res.statusText);
+  return res;
 }
 
 /** URL of an agent-generated chart PNG. */

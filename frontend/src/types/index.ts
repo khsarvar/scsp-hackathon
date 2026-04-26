@@ -267,6 +267,7 @@ export interface AppState {
   discoverEvents: AgentEvent[];
   cleanEvents: AgentEvent[];
   askEvents: AgentEvent[];
+  codeStepEvents: CodeStep[];
   hypotheses: Hypothesis[];
   lastTestResult: RunTestResponse | null;
   // Catalog recommendations (pre-fetch HITL)
