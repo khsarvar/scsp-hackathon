@@ -21,11 +21,18 @@ class SessionData:
     # akbar/init upgrades: multi-frame workspace, agent thought streams, hypotheses
     workspace: Workspace = field(default_factory=Workspace)
     primary_alias: Optional[str] = None
+    research_question: Optional[str] = None  # what the user originally asked (CDC discover / literature input)
     discover_events: list[dict[str, Any]] = field(default_factory=list)
     clean_events: list[dict[str, Any]] = field(default_factory=list)
     analyze_events: list[dict[str, Any]] = field(default_factory=list)
     hypotheses: list[dict[str, Any]] = field(default_factory=list)
     test_history: list[dict[str, Any]] = field(default_factory=list)
+
+    # Literature review (PubMed) — last completed report for this session
+    literature_question: Optional[str] = None
+    literature_summary: Optional[str] = None
+    literature_articles: list[dict[str, Any]] = field(default_factory=list)
+    literature_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 # In-memory store — fine for hackathon MVP

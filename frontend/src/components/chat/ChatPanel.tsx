@@ -7,6 +7,8 @@ import { useChat } from "@/hooks/useChat";
 
 interface ChatPanelProps {
   sessionId: string | null;
+  /** Optional pre-instantiated chat state. If omitted, the panel owns its own. */
+  chat?: ReturnType<typeof useChat>;
 }
 
 const QUICK_PROMPTS = [
@@ -17,8 +19,9 @@ const QUICK_PROMPTS = [
   "Suggest follow-up experiments",
 ];
 
-export default function ChatPanel({ sessionId }: ChatPanelProps) {
-  const { messages, isStreaming, error, sendMessage } = useChat(sessionId);
+export default function ChatPanel({ sessionId, chat }: ChatPanelProps) {
+  const owned = useChat(chat ? null : sessionId);
+  const { messages, isStreaming, error, sendMessage } = chat ?? owned;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

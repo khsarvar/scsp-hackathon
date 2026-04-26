@@ -4,11 +4,12 @@ import { useState, useMemo } from "react";
 import clsx from "clsx";
 import DropZone from "@/components/upload/DropZone";
 import { useSession } from "@/hooks/useSession";
-import { profileDataset, streamDiscover } from "@/lib/api";
+import { profileDataset, streamDiscover, streamLiterature } from "@/lib/api";
 import { consumeAgentStream } from "@/hooks/useAgentStream";
 import type {
   AgentEvent,
   DiscoverResultPayload,
+  LiteratureResult,
   UploadResponse,
 } from "@/types";
 
@@ -116,7 +117,35 @@ export default function LeftSidebar() {
     setDiscovering(true);
     setDiscoverError(null);
     dispatch({ type: "DISCOVER_RESET" });
+    dispatch({ type: "LITERATURE_RESET" });
     dispatch({ type: "SET_STEP", step: "discovering" });
+
+    // Kick off literature review in parallel — same research question, no session yet.
+    // Persistence to the session happens after discover finishes (see below).
+    const literaturePromise = (async () => {
+      let result: LiteratureResult | null = null;
+      try {
+        const litRes = await streamLiterature(q, null);
+        await consumeAgentStream(litRes, (event: AgentEvent) => {
+          dispatch({ type: "LITERATURE_EVENT", event });
+          if (event.type === "result") {
+            const data = (event as { data: Record<string, unknown> }).data;
+            if (data.ok && typeof data.summary === "string") {
+              result = {
+                question: (data.question as string) ?? q,
+                summary: data.summary,
+                articles: (data.articles as LiteratureResult["articles"]) ?? [],
+              };
+              dispatch({ type: "SET_LITERATURE_RESULT", result });
+            }
+          }
+        });
+      } catch {
+        // non-fatal: discover continues regardless
+      }
+      return result;
+    })();
+
     try {
       const res = await streamDiscover(q);
       const payloadHolder: { value: DiscoverResultPayload | null; error: string | null } = {
@@ -155,6 +184,8 @@ export default function LeftSidebar() {
       setDiscoverError((err as Error).message);
       dispatch({ type: "SET_STEP", step: "idle" });
     } finally {
+      // Let the literature stream finish in the background; don't block the UI on it.
+      literaturePromise.catch(() => {});
       setDiscovering(false);
     }
   };
@@ -191,7 +222,13 @@ export default function LeftSidebar() {
           <textarea
             value={discoverQuestion}
             onChange={(e) => setDiscoverQuestion(e.target.value)}
-            placeholder="Research question, e.g. How does flu vaccination relate to hospitalization rates by state?"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleDiscover();
+              }
+            }}
+            placeholder="Research question, e.g. How does flu vaccination relate to hospitalization rates by state? (Enter to submit, Shift+Enter for newline)"
             rows={3}
             disabled={busy}
             className={clsx(

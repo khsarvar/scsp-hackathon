@@ -45,13 +45,21 @@ export async function profileDataset(sessionId: string): Promise<ProfileResponse
   return handleResponse<ProfileResponse>(res);
 }
 
-export async function runAnalysis(sessionId: string): Promise<AnalyzeResponse> {
+export async function runAnalysis(
+  sessionId: string,
+  question?: string | null,
+): Promise<AnalyzeResponse> {
   const res = await fetch(`${BASE}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ session_id: sessionId }),
+    body: JSON.stringify({ session_id: sessionId, question: question ?? null }),
   });
   return handleResponse<AnalyzeResponse>(res);
+}
+
+/** URL of an agent-generated chart PNG. */
+export function chartUrl(sessionId: string, filename: string): string {
+  return `${BASE}/charts/${sessionId}/${encodeURIComponent(filename)}`;
 }
 
 export async function sendChatMessage(
@@ -135,4 +143,23 @@ export async function streamAsk(sessionId: string, question: string): Promise<Re
   });
   if (!res.ok) throw new Error(res.statusText);
   return res;
+}
+
+/** Stream the PubMed literature review agent. */
+export async function streamLiterature(
+  question: string,
+  sessionId: string | null,
+): Promise<Response> {
+  const res = await fetch(`${BASE}/literature/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error(res.statusText);
+  return res;
+}
+
+/** Trigger a Python script download for the session's analysis. */
+export function exportScriptUrl(sessionId: string): string {
+  return `${BASE}/export/${sessionId}/script`;
 }

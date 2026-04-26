@@ -33,6 +33,7 @@ async def discover_datasets(req: DiscoverRequest):
         filename=f"cdc-discover.csv",
         original_path="",
     )
+    sess.research_question = req.question
 
     def run(emit):
         ws, primary, _events = discover(req.question, workspace=sess.workspace, on_event=emit)

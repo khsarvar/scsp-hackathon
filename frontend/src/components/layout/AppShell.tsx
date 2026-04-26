@@ -1,12 +1,25 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import LeftSidebar from "./LeftSidebar";
-import RightPanel from "./RightPanel";
+import AppHeader from "./AppHeader";
+import ChatSheet from "./ChatSheet";
 import WorkspaceArea from "@/components/workspace/WorkspaceArea";
 import { useSession } from "@/hooks/useSession";
+import { useChat } from "@/hooks/useChat";
 
 export default function AppShell() {
   const { state } = useSession();
+  const [chatOpen, setChatOpen] = useState(false);
+  const [seenCount, setSeenCount] = useState(0);
+  const chat = useChat(state.sessionId);
+
+  // Track unread assistant replies while sheet is closed
+  const messageCount = chat.messages.length;
+  useEffect(() => {
+    if (chatOpen) setSeenCount(messageCount);
+  }, [chatOpen, messageCount]);
+  const unreadCount = Math.max(0, messageCount - seenCount);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -15,15 +28,27 @@ export default function AppShell() {
         <LeftSidebar />
       </aside>
 
-      {/* Main Workspace */}
-      <main className="flex-1 overflow-y-auto">
-        <WorkspaceArea />
-      </main>
+      {/* Main column */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <AppHeader
+          onChatToggle={() => setChatOpen((o) => !o)}
+          chatOpen={chatOpen}
+          chatActive={!!state.sessionId}
+          chatStreaming={chat.isStreaming}
+          unreadCount={unreadCount}
+        />
+        <main className="flex-1 overflow-hidden flex flex-col">
+          <WorkspaceArea />
+        </main>
+      </div>
 
-      {/* Right Chat Panel */}
-      <aside className="w-80 flex-shrink-0 border-l border-slate-200 bg-white flex flex-col overflow-hidden">
-        <RightPanel sessionId={state.sessionId} />
-      </aside>
+      {/* Slide-over chat */}
+      <ChatSheet
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        sessionId={state.sessionId}
+        chat={chat}
+      />
     </div>
   );
 }

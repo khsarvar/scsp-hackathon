@@ -49,6 +49,7 @@ class ProfileResponse(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     session_id: str
+    question: Optional[str] = None
 
 
 class StatRow(BaseModel):
@@ -72,14 +73,24 @@ class ChartSpec(BaseModel):
     data: list[dict[str, Any]]
 
 
+class CodeStep(BaseModel):
+    rationale: str = ""
+    code: str
+    stdout: str = ""
+    stderr: str = ""
+    charts: list[str] = []
+    ok: bool = True
+
+
 class AnalyzeResponse(BaseModel):
     session_id: str
-    cleaning_steps: list[str]
-    stats: list[StatRow]
-    charts: list[ChartSpec]
-    findings: str
-    limitations: str
-    follow_up: str
+    research_question: Optional[str] = None
+    cleaning_steps: list[str] = []
+    steps: list[CodeStep] = []
+    summary: str = ""
+    findings: str = ""
+    limitations: str = ""
+    follow_up: str = ""
 
 
 class ChatMessage(BaseModel):

@@ -15,11 +15,15 @@ from typing import Callable, Optional
 from services.discovery import Workspace
 from services.tools import STATS_TESTS
 from services.llm_agents import (
+    CodeAnalysisResult,
     Hypothesis,
+    LiteratureReport,
     analyze_run,
     clean_run,
+    code_analysis_run,
     discover_run,
     hypotheses_run,
+    literature_run,
 )
 
 
@@ -95,6 +99,35 @@ def analyze_question(
     emit = _make_emitter(events, on_event)
     answer = asyncio.run(analyze_run(question, workspace, alias, emit, max_steps=max_steps))
     return answer, events
+
+
+def run_code_analysis(
+    question: str,
+    csv_path: str,
+    work_dir: str,
+    profile: dict,
+    max_steps: int = 10,
+    on_event: EventCallback = None,
+) -> tuple[Optional[CodeAnalysisResult], list[dict], list]:
+    """Run the code agent. Returns (result, recorded_code_steps, agent_events)."""
+    events: list = []
+    emit = _make_emitter(events, on_event)
+    result, code_steps = asyncio.run(code_analysis_run(
+        question, csv_path, work_dir, profile, emit, max_steps=max_steps,
+    ))
+    return result, code_steps, events
+
+
+def review_literature(
+    question: str,
+    max_steps: int = 6,
+    on_event: EventCallback = None,
+) -> tuple[Optional[LiteratureReport], list]:
+    """Run the literature agent. Returns (report, events)."""
+    events: list = []
+    emit = _make_emitter(events, on_event)
+    report = asyncio.run(literature_run(question, emit, max_steps=max_steps))
+    return report, events
 
 
 def run_stats_test(workspace: Workspace, alias: str, test: str, args: dict) -> dict:

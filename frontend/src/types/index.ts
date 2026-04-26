@@ -60,11 +60,21 @@ export interface ChartSpec {
   data: Record<string, unknown>[];
 }
 
+export interface CodeStep {
+  rationale: string;
+  code: string;
+  stdout: string;
+  stderr: string;
+  charts: string[];
+  ok: boolean;
+}
+
 export interface AnalyzeResponse {
   session_id: string;
+  research_question?: string | null;
   cleaning_steps: string[];
-  stats: StatRow[];
-  charts: ChartSpec[];
+  steps: CodeStep[];
+  summary: string;
   findings: string;
   limitations: string;
   follow_up: string;
@@ -160,6 +170,26 @@ export type AppStep =
   | "results"
   | "error";
 
+export type WorkspaceTab = "discover" | "literature" | "plan";
+
+export interface LiteratureArticle {
+  pmid: string;
+  title: string;
+  authors?: string[];
+  journal?: string;
+  year?: string;
+  doi?: string;
+  url?: string;
+  abstract?: string;
+  relevance?: string;
+}
+
+export interface LiteratureResult {
+  question: string;
+  summary: string;
+  articles: LiteratureArticle[];
+}
+
 export interface AppState {
   step: AppStep;
   sessionId: string | null;
@@ -174,4 +204,9 @@ export interface AppState {
   askEvents: AgentEvent[];
   hypotheses: Hypothesis[];
   lastTestResult: RunTestResponse | null;
+  // Literature review
+  literatureEvents: AgentEvent[];
+  literatureResult: LiteratureResult | null;
+  // UI
+  activeTab: WorkspaceTab;
 }

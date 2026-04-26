@@ -5,7 +5,6 @@ import React, {
   useContext,
   useReducer,
   useCallback,
-  useEffect,
 } from "react";
 import type {
   AppState,
@@ -16,6 +15,9 @@ import type {
   AgentEvent,
   Hypothesis,
   RunTestResponse,
+  LiteratureResult,
+  WorkspaceTab,
+  SessionHistory,
 } from "@/types";
 
 type Action =
@@ -33,7 +35,11 @@ type Action =
   | { type: "ASK_EVENT"; event: AgentEvent }
   | { type: "ASK_RESET" }
   | { type: "SET_HYPOTHESES"; hypotheses: Hypothesis[] }
-  | { type: "SET_TEST_RESULT"; result: RunTestResponse };
+  | { type: "SET_TEST_RESULT"; result: RunTestResponse }
+  | { type: "LITERATURE_EVENT"; event: AgentEvent }
+  | { type: "LITERATURE_RESET" }
+  | { type: "SET_LITERATURE_RESULT"; result: LiteratureResult }
+  | { type: "SET_ACTIVE_TAB"; tab: WorkspaceTab };
 
 const initialState: AppState = {
   step: "idle",
@@ -48,6 +54,9 @@ const initialState: AppState = {
   askEvents: [],
   hypotheses: [],
   lastTestResult: null,
+  literatureEvents: [],
+  literatureResult: null,
+  activeTab: "discover",
 };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -67,6 +76,9 @@ function reducer(state: AppState, action: Action): AppState {
         askEvents: [],
         hypotheses: [],
         lastTestResult: null,
+        literatureEvents: [],
+        literatureResult: null,
+        activeTab: "discover",
       };
     case "SET_PROFILE":
       return {
@@ -104,6 +116,14 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, hypotheses: action.hypotheses };
     case "SET_TEST_RESULT":
       return { ...state, lastTestResult: action.result };
+    case "LITERATURE_EVENT":
+      return { ...state, literatureEvents: [...state.literatureEvents, action.event] };
+    case "LITERATURE_RESET":
+      return { ...state, literatureEvents: [], literatureResult: null };
+    case "SET_LITERATURE_RESULT":
+      return { ...state, literatureResult: action.result };
+    case "SET_ACTIVE_TAB":
+      return { ...state, activeTab: action.tab };
     default:
       return state;
   }

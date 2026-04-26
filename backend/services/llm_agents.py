@@ -37,6 +37,10 @@ from services.discovery import (
     search_catalog as _search_catalog,
     get_dataset_schema as _get_dataset_schema,
 )
+from services.literature import (
+    LITERATURE_OPS_DOC,
+    apply_literature_op,
+)
 
 
 EventEmit = Callable[[dict], None]
@@ -80,6 +84,30 @@ class FindingsReport(BaseModel):
     follow_up: str
 
 
+class LiteratureArticle(BaseModel):
+    pmid: str
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    journal: str = ""
+    year: str = ""
+    doi: str = ""
+    url: str = ""
+    abstract: str = ""
+    relevance: str = Field(default="", description="Why this paper is relevant to the question.")
+
+
+class LiteratureReport(BaseModel):
+    summary: str = Field(description="One-paragraph overview of what the literature says about the question.")
+    articles: list[LiteratureArticle] = Field(default_factory=list)
+
+
+class CodeAnalysisResult(BaseModel):
+    summary: str = Field(description="One-paragraph plain-English summary of what was done and what was found.")
+    findings: str = Field(description="3-5 paragraph narrative of key findings, citing specific numbers from the printed output.")
+    limitations: str = Field(description="Bullet list (using •) of limitations.")
+    follow_up: str = Field(description="Numbered list of follow-up research questions or experiments.")
+
+
 # ---------- Per-agent dependency dataclasses ----------
 
 
@@ -106,6 +134,19 @@ class AnalyzeDeps:
     workspace: Workspace
     alias: str
     emit: EventEmit
+
+
+@dataclass
+class LiteratureDeps:
+    emit: EventEmit
+
+
+@dataclass
+class CodeDeps:
+    csv_path: str
+    work_dir: str
+    emit: EventEmit
+    steps: list[dict]  # accumulated {rationale, code, stdout, stderr, charts, ok}
 
 
 # ---------- System prompts ----------
@@ -195,6 +236,53 @@ Each hypothesis must include:
 - rationale: why this is interesting given the data
 """
 
+CODE_SYSTEM = """You are a public-health data scientist. You have a cleaned dataset and a research question. Investigate the question by writing real Python, running it, and interpreting the printed output.
+
+You have ONE tool:
+- `run_python(code, rationale)` — executes `code` in a Python subprocess. The variable `df` is already loaded from the cleaned CSV. `pandas as pd`, `numpy as np`, `from scipy import stats`, and `matplotlib.pyplot as plt` are pre-imported. The tool returns `{ok, stdout, stderr, charts}` where `charts` lists `*.png` files saved during the call (use `plt.savefig('descriptive_name.png')`).
+
+Workflow:
+1. ONE exploration call first: print `df.shape`, `df.dtypes`, `df.head(3)`, and `value_counts(dropna=False).head(10)` for important categorical columns. Do not load extra packages.
+2. Then write 3-5 substantive analyses tailored to the research question:
+   - Group comparisons (Welch t-test, Mann-Whitney, ANOVA, Kruskal — pick what fits) using `scipy.stats`.
+   - Correlations between numeric columns relevant to the question.
+   - Stratified analyses (by site, age_group, sex, race/ethnicity, season, year) when the question implies disparities.
+   - Time-series aggregation (resample, groupby month/season) when temporal columns exist.
+3. EVERY analytical call should ALSO produce at least one chart via `plt.savefig('foo.png')`. Empty `charts` on an analysis step is a failure.
+4. Print numeric results clearly with f-strings: include test name, statistic, p-value, sample sizes, effect size where applicable.
+5. If a call errors or returns surprising output (NaN, 0 rows after filter, unexpected dtype), diagnose and retry.
+6. Stop after 5-8 successful run_python calls. Then return a CodeAnalysisResult whose `findings` cites the actual numbers your code printed.
+
+CRITICAL constraints:
+- Subprocess state does NOT persist across calls. Every call starts fresh with `df` re-loaded from CSV. Do all setup you need inside each call.
+- Do NOT redefine `df` or re-read the CSV — `df = pd.read_csv(...)` is already done for you.
+- Keep each `code` block focused on one task — short and readable beats sprawling.
+- Use REAL column names from the profile and from your initial exploration call. Do not invent columns.
+- If the dataset has aggregate "Overall" rows mixed with stratified rows, FILTER THEM OUT before group comparisons (e.g. `df[df['age_group'] != 'Overall']`).
+- Save charts with descriptive lowercase filenames like `weekly_rate_by_age_group.png`, not `chart1.png`.
+- The `findings` you return at the end MUST reference specific numbers (statistics, p-values, group means) from your printed output. Vague summaries are unacceptable."""
+
+LITERATURE_SYSTEM = f"""You are a research librarian. Given a public-health research question, find prior peer-reviewed work on the topic by searching PubMed, then summarize each relevant paper's contribution.
+
+You have these tools:
+- `literature_op(op, args, rationale)` — dispatches to:
+{LITERATURE_OPS_DOC}
+
+Workflow:
+1. Call search_pubmed with terms drawn from the question. If the first query returns <3 hits, broaden it (drop a modifier, swap to a synonym). If it returns >15, narrow it.
+2. Call fetch_pubmed once on the top 6-10 pmids — one batch is enough.
+3. From the abstracts, return a LiteratureReport with:
+   - `summary`: a 3-5 sentence plain-English synthesis of what the literature collectively says about the question (consensus, disagreements, gaps).
+   - `articles`: 4-8 articles you actually consider relevant, each with a one-sentence `relevance` field explaining the connection to the question. Drop articles whose abstract clearly does not address the question.
+
+Rules:
+- Do not invent pmids, titles, or authors. Use only what fetch_pubmed returned.
+- Prefer recent work (last 10 years) unless the question is historical.
+- If the first search returns 0 results, try a broader query before giving up.
+- Be concise — short rationales beat long ones.
+- Never finish without at least one search_pubmed + one fetch_pubmed call.
+"""
+
 CHAT_SYSTEM = """You are HealthLab Agent, an autonomous public health research assistant. Your role is to inspect public health datasets, clean them, run exploratory analysis, generate charts and tables, explain findings in plain English, and suggest follow-up research questions or experiments.
 
 Always be careful with public health claims. Do not provide medical advice. Do not claim causation from observational data unless the study design supports it. Always mention missing data, limitations, uncertainty, and possible confounders. Prefer simple, interpretable analysis first. Make your work reproducible by explaining cleaning steps and analysis methods.
@@ -275,6 +363,22 @@ findings_agent: Agent[None, FindingsReport] = Agent(
     model_settings=ModelSettings(max_tokens=2048),
 )
 
+literature_agent: Agent[LiteratureDeps, LiteratureReport] = Agent(
+    settings.agent_model,
+    deps_type=LiteratureDeps,
+    output_type=LiteratureReport,
+    instructions=LITERATURE_SYSTEM,
+    model_settings=ModelSettings(max_tokens=2048),
+)
+
+code_agent: Agent[CodeDeps, CodeAnalysisResult] = Agent(
+    settings.agent_model,
+    deps_type=CodeDeps,
+    output_type=CodeAnalysisResult,
+    instructions=CODE_SYSTEM,
+    model_settings=ModelSettings(max_tokens=4096),
+)
+
 
 def chat_agent_with_context(dataset_context: str) -> Agent[None, str]:
     """Build an ad-hoc chat agent with the dataset context baked into instructions."""
@@ -337,7 +441,7 @@ async def discover_scout(ctx: RunContext[DiscoverDeps], question: str) -> str:
     ctx.deps.emit({
         "type": "tool_call", "agent": "discover",
         "name": "scout", "args": {"question": question[:80]},
-        "rationale": "Haiku sub-agent for catalog search + schema",
+        "rationale": f"{settings.scout_model} sub-agent for catalog search + schema",
     })
     try:
         result = await scout_agent.run(
@@ -430,6 +534,79 @@ async def analyze_run_test(
     ctx.deps.emit({
         "type": "tool_result", "agent": "analyze",
         "name": test, "summary": _summarize_test_result(result), "result": result,
+    })
+    return json.dumps(result, default=str)
+
+
+# Code agent tool
+
+
+@code_agent.tool
+async def code_run_python(
+    ctx: RunContext[CodeDeps],
+    code: str,
+    rationale: str = "",
+) -> str:
+    """Run `code` in a subprocess sandbox with `df` already loaded. See instructions for what's available."""
+    from services.sandbox import run_python  # local import to avoid heavy deps at module load
+
+    ctx.deps.emit({
+        "type": "tool_call", "agent": "code",
+        "name": "run_python",
+        "args": {"chars": len(code), "lines": code.count("\n") + 1},
+        "rationale": rationale,
+    })
+    result = run_python(code, ctx.deps.csv_path, ctx.deps.work_dir)
+    step = {
+        "rationale": rationale,
+        "code": code,
+        "stdout": result["stdout"],
+        "stderr": result["stderr"],
+        "charts": result["charts"],
+        "ok": result["ok"],
+    }
+    ctx.deps.steps.append(step)
+
+    if result["ok"]:
+        summary = (
+            f"ok — {len(result['stdout'].splitlines())} lines stdout, "
+            f"{len(result['charts'])} chart(s)"
+        )
+    else:
+        summary = "FAILED: " + (result["stderr"].strip().splitlines()[-1] if result["stderr"].strip() else "non-zero exit")
+    ctx.deps.emit({
+        "type": "tool_result", "agent": "code",
+        "name": "run_python", "summary": summary,
+        "result": {
+            "ok": result["ok"],
+            "charts": result["charts"],
+            "stdout_preview": result["stdout"][-400:],
+            "stderr_preview": result["stderr"][-400:],
+        },
+    })
+    return json.dumps(result, default=str)
+
+
+# Literature agent tool
+
+
+@literature_agent.tool
+async def literature_op_tool(
+    ctx: RunContext[LiteratureDeps],
+    op: str,
+    args: dict[str, Any],
+    rationale: str = "",
+) -> str:
+    """Run one literature op. See instructions for op names and args."""
+    ctx.deps.emit({
+        "type": "tool_call", "agent": "literature",
+        "name": op, "args": args, "rationale": rationale,
+    })
+    result = apply_literature_op({"op": op, "args": args})
+    ctx.deps.emit({
+        "type": "tool_result", "agent": "literature",
+        "name": op, "summary": _summarize_literature_result(op, result),
+        "result": _truncate_literature_result(op, result),
     })
     return json.dumps(result, default=str)
 
@@ -535,6 +712,67 @@ async def analyze_run(question: str, workspace: Workspace, alias: str, emit: Eve
     return result
 
 
+async def code_analysis_run(
+    question: str,
+    csv_path: str,
+    work_dir: str,
+    profile: dict,
+    emit: EventEmit,
+    max_steps: int = 10,
+) -> tuple[Optional[CodeAnalysisResult], list[dict]]:
+    """Drive the code agent against a cleaned dataset. Returns (result, recorded_steps)."""
+    steps: list[dict] = []
+    deps = CodeDeps(csv_path=csv_path, work_dir=work_dir, emit=emit, steps=steps)
+
+    profile_brief = {
+        "n_rows": profile.get("row_count") or profile.get("n_rows"),
+        "n_cols": profile.get("col_count") or profile.get("n_cols"),
+        "columns": [
+            {
+                "name": c.get("name"),
+                "dtype": c.get("dtype_inferred") or c.get("dtype"),
+                "n_unique": c.get("unique_count") or c.get("n_unique"),
+                "missing_pct": c.get("missing_pct") or c.get("pct_missing"),
+                "sample": (c.get("sample_values") or c.get("sample") or [])[:5],
+            }
+            for c in (profile.get("columns") or [])[:40]
+        ],
+    }
+
+    user_msg = (
+        f"Research question: {question or '(none provided — perform a thorough exploratory analysis)'}\n\n"
+        f"Cleaned dataset profile:\n{json.dumps(profile_brief, indent=2, default=str)}\n\n"
+        "Investigate the question with real statistical tests + charts. Save charts via `plt.savefig`."
+    )
+    result = await _run_with_events(
+        code_agent, user_msg, deps, "code", request_limit=max_steps,
+    )
+    if result is not None:
+        emit({"type": "final", "agent": "code", "summary": result.summary[:300]})
+    return result, steps
+
+
+async def literature_run(question: str, emit: EventEmit, max_steps: int = 6) -> Optional[LiteratureReport]:
+    deps = LiteratureDeps(emit=emit)
+    user_msg = (
+        f"Research question: {question}\n\n"
+        "Search PubMed, fetch the most relevant abstracts, and return a LiteratureReport."
+    )
+    result = await _run_with_events(
+        literature_agent,
+        user_msg,
+        deps,
+        "literature",
+        request_limit=max_steps,
+    )
+    if result is not None:
+        emit({
+            "type": "final", "agent": "literature",
+            "summary": result.summary[:300],
+        })
+    return result
+
+
 async def hypotheses_run(workspace: Workspace, alias: str, n: int = 4) -> list[Hypothesis]:
     df = workspace.get(alias)
     profile = profile_df(df)
@@ -618,6 +856,41 @@ def _truncate_result(r: dict) -> dict:
         out["preview"] = f"<{len(out['preview'])} rows>"
     if "columns" in out and isinstance(out["columns"], list) and len(out["columns"]) > 12:
         out["columns"] = out["columns"][:12] + ["..."]
+    return out
+
+
+def _summarize_literature_result(op: str, result: dict) -> str:
+    if not isinstance(result, dict):
+        return str(result)[:120]
+    if not result.get("ok", True):
+        return f"error: {result.get('error', '?')}"
+    if op == "search_pubmed":
+        return f"{result.get('n_results', 0)} pmids for `{result.get('query', '')[:60]}`"
+    if op == "fetch_pubmed":
+        n = result.get("n_articles", 0)
+        sample = result.get("articles", [])[:1]
+        first = sample[0]["title"][:60] if sample else ""
+        return f"fetched {n} articles{' — ' + first if first else ''}"
+    return "ok"
+
+
+def _truncate_literature_result(op: str, result: dict) -> dict:
+    """Trim large abstract text from the UI log; agent still sees full payload via tool return."""
+    if not isinstance(result, dict):
+        return result
+    out = dict(result)
+    if op == "fetch_pubmed" and isinstance(out.get("articles"), list):
+        out["articles"] = [
+            {
+                "pmid": a.get("pmid"),
+                "title": a.get("title"),
+                "year": a.get("year"),
+                "journal": a.get("journal"),
+            }
+            for a in out["articles"][:6]
+        ]
+    if op == "search_pubmed" and isinstance(out.get("pmids"), list):
+        out["pmids"] = out["pmids"][:10]
     return out
 
 
