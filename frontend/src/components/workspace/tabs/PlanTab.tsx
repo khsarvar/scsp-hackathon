@@ -9,6 +9,8 @@ import FindingsText from "../FindingsText";
 import LimitationsBox from "../LimitationsBox";
 import FollowUpList from "../FollowUpList";
 import ExportButton from "../ExportButton";
+import ChartGallery from "../ChartGallery";
+import StatsPanel from "../StatsPanel";
 import { useSession } from "@/hooks/useSession";
 import { runAnalysis } from "@/lib/api";
 
@@ -101,20 +103,46 @@ export default function PlanTab() {
             )}
           </StepCard>
 
+          {analysisResult.charts?.length > 0 && (
+            <StepCard
+              title="Exploratory Charts"
+              stepNumber={6}
+              status="done"
+              collapsible
+              defaultOpen
+              badge={`${analysisResult.charts.length} charts`}
+            >
+              <ChartGallery charts={analysisResult.charts} />
+            </StepCard>
+          )}
+
+          {analysisResult.stats?.length > 0 && (
+            <StepCard
+              title="Summary Statistics"
+              stepNumber={7}
+              status="done"
+              collapsible
+              defaultOpen={false}
+              badge={`${analysisResult.stats.length} columns`}
+            >
+              <StatsPanel stats={analysisResult.stats} />
+            </StepCard>
+          )}
+
           {analysisResult.summary && (
-            <StepCard title="Summary" stepNumber={6} status="done">
+            <StepCard title="Summary" stepNumber={8} status="done">
               <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
                 {analysisResult.summary}
               </p>
             </StepCard>
           )}
 
-          <StepCard title="Key Findings" stepNumber={7} status="done">
+          <StepCard title="Key Findings" stepNumber={9} status="done">
             <FindingsText findings={analysisResult.findings} />
           </StepCard>
 
           {analysisResult.limitations && (
-            <StepCard title="Limitations" stepNumber={8} status="done">
+            <StepCard title="Limitations" stepNumber={10} status="done">
               <LimitationsBox limitations={analysisResult.limitations} />
             </StepCard>
           )}
@@ -122,7 +150,7 @@ export default function PlanTab() {
           {analysisResult.follow_up && (
             <StepCard
               title="Suggested Follow-Up Research"
-              stepNumber={9}
+              stepNumber={11}
               status="done"
             >
               <FollowUpList followUp={analysisResult.follow_up} />
@@ -130,7 +158,7 @@ export default function PlanTab() {
           )}
 
           {sessionId && uploadResult && (
-            <StepCard title="Export Research Memo" stepNumber={10} status="done">
+            <StepCard title="Export Research Memo" stepNumber={12} status="done">
               <ExportButton
                 sessionId={sessionId}
                 filename={uploadResult.filename}

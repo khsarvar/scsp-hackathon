@@ -84,11 +84,12 @@ class StatRow(BaseModel):
 
 
 class ChartSpec(BaseModel):
-    chart_type: str  # 'line', 'scatter', 'bar'
+    chart_type: str  # 'line', 'scatter', 'bar', 'histogram', 'box', 'heatmap'
     title: str
     x_key: str
     y_keys: list[str] = []
     y_key: Optional[str] = None
+    description: str = ""
     data: list[dict[str, Any]]
 
 
@@ -110,6 +111,8 @@ class AnalyzeResponse(BaseModel):
     findings: str = ""
     limitations: str = ""
     follow_up: str = ""
+    charts: list[ChartSpec] = []
+    stats: list[StatRow] = []
 
 
 class ChatMessage(BaseModel):

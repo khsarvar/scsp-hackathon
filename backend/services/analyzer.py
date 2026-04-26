@@ -118,6 +118,68 @@ def _build_bar_aggregation(
     return grouped.to_dict("records")
 
 
+def _build_histogram(
+    df: pd.DataFrame, col: str, bins: int = 20
+) -> list[dict[str, Any]]:
+    series = df[col].dropna()
+    if len(series) < 2:
+        return []
+    counts, edges = np.histogram(series, bins=bins)
+    result = []
+    for i, count in enumerate(counts):
+        lo = round(float(edges[i]), 4)
+        hi = round(float(edges[i + 1]), 4)
+        result.append({
+            "bin": f"{lo}–{hi}",
+            "count": int(count),
+            "bin_start": lo,
+            "bin_end": hi,
+        })
+    return result
+
+
+def _build_box_summary(
+    df: pd.DataFrame, cat_col: str, numeric_col: str
+) -> list[dict[str, Any]]:
+    result = []
+    groups = df[cat_col].dropna().unique()[:12]
+    for g in groups:
+        series = df.loc[df[cat_col] == g, numeric_col].dropna()
+        if len(series) < 3:
+            continue
+        result.append({
+            "group": str(g),
+            "min": _sf(series.min()),
+            "q1": _sf(series.quantile(0.25)),
+            "median": _sf(series.quantile(0.50)),
+            "q3": _sf(series.quantile(0.75)),
+            "max": _sf(series.max()),
+        })
+    return result
+
+
+def _build_heatmap_data(
+    df: pd.DataFrame, numeric_cols: list[str]
+) -> list[dict[str, Any]]:
+    cols = numeric_cols[:8]
+    if len(cols) < 3:
+        return []
+    sub = df[cols].dropna()
+    if len(sub) < 3:
+        return []
+    corr = sub.corr()
+    result = []
+    for row_col in corr.index:
+        for col_col in corr.columns:
+            val = corr.loc[row_col, col_col]
+            result.append({
+                "row": row_col,
+                "col": col_col,
+                "value": _sf(val, 4),
+            })
+    return result
+
+
 def build_chart_specs(
     df: pd.DataFrame, profile: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -180,10 +242,39 @@ def build_chart_specs(
                 "data": bar_data,
             })
 
-    # ── Chart 3: Scatter plot (two numeric columns) ───────────────────────
+    # ── Chart 3: Histograms (one per numeric col, max 4) ─────────────────
+    for num_col in primary_numeric[:4]:
+        hist_data = _build_histogram(df, num_col)
+        if hist_data:
+            charts.append({
+                "chart_type": "histogram",
+                "title": f"Distribution of {num_col.replace('_', ' ').title()}",
+                "x_key": "bin",
+                "y_keys": ["count"],
+                "y_key": "count",
+                "description": f"Frequency histogram for {num_col}",
+                "data": hist_data,
+            })
+
+    # ── Chart 4: Box plot (first categorical × first numeric) ─────────────
+    if categorical_cols and primary_numeric:
+        cat_col = categorical_cols[0]
+        y_col = primary_numeric[0]
+        box_data = _build_box_summary(df, cat_col, y_col)
+        if box_data:
+            charts.append({
+                "chart_type": "box",
+                "title": f"{y_col.replace('_', ' ').title()} by {cat_col.replace('_', ' ').title()}",
+                "x_key": "group",
+                "y_keys": ["median"],
+                "y_key": "median",
+                "description": f"Box plot of {y_col} grouped by {cat_col}",
+                "data": box_data,
+            })
+
+    # ── Chart 5: Scatter plot (two numeric columns) ───────────────────────
     if len(numeric_cols) >= 2:
         y_col = primary_numeric[0]
-        # Pick x_col as the first numeric col that differs from y_col
         x_col = next((c for c in primary_numeric[1:] if c != y_col), None)
         if x_col is None:
             x_col = next((c for c in numeric_cols if c != y_col), None)
@@ -196,22 +287,21 @@ def build_chart_specs(
                     "x_key": x_col,
                     "y_keys": [y_col],
                     "y_key": y_col,
-                    "data": scatter_data[:200],  # cap for performance
+                    "data": scatter_data[:200],
                 })
 
-    # ── Chart 4: Second bar chart (second categorical) ────────────────────
-    if len(categorical_cols) >= 2 and primary_numeric:
-        cat_col2 = categorical_cols[1]
-        y_col = primary_numeric[0]
-        bar_data2 = _build_bar_aggregation(df, cat_col2, y_col)
-        if bar_data2:
+    # ── Chart 6: Correlation heatmap (3+ numeric cols) ────────────────────
+    if len(numeric_cols) >= 3:
+        heatmap_data = _build_heatmap_data(df, numeric_cols)
+        if heatmap_data:
             charts.append({
-                "chart_type": "bar",
-                "title": f"Mean {y_col.replace('_', ' ').title()} by {cat_col2.replace('_', ' ').title()}",
-                "x_key": cat_col2,
-                "y_keys": [y_col],
-                "y_key": y_col,
-                "data": bar_data2,
+                "chart_type": "heatmap",
+                "title": "Correlation Heatmap",
+                "x_key": "col",
+                "y_keys": ["value"],
+                "y_key": "row",
+                "description": "Pearson correlation between numeric columns",
+                "data": heatmap_data,
             })
 
     return charts

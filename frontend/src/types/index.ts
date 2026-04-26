@@ -71,11 +71,12 @@ export interface StatRow {
 }
 
 export interface ChartSpec {
-  chart_type: "line" | "bar" | "scatter";
+  chart_type: "line" | "bar" | "scatter" | "histogram" | "box" | "heatmap";
   title: string;
   x_key: string;
   y_keys: string[];
   y_key?: string | null;
+  description?: string;
   data: Record<string, unknown>[];
 }
 
@@ -97,6 +98,8 @@ export interface AnalyzeResponse {
   findings: string;
   limitations: string;
   follow_up: string;
+  charts: ChartSpec[];
+  stats: StatRow[];
 }
 
 export interface ChatMessage {

@@ -25,6 +25,7 @@ from models.schemas import AnalyzeRequest
 from models import session as session_store
 from services.cleaner import clean_dataframe
 from services.agent import run_code_analysis
+from services.analyzer import build_chart_specs, compute_summary_stats
 from utils.file_utils import get_cleaned_path
 
 router = APIRouter()
@@ -50,6 +51,9 @@ def run_analysis(req: AnalyzeRequest):
     cleaned_path = get_cleaned_path(req.session_id)
     cleaned_df.to_csv(cleaned_path, index=False)
 
+    chart_specs = build_chart_specs(cleaned_df, sess.profile)
+    stats = compute_summary_stats(cleaned_df)
+
     work_dir = Path(settings.upload_dir) / req.session_id / "charts"
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -72,6 +76,8 @@ def run_analysis(req: AnalyzeRequest):
         "findings": result.findings if result else "Agent did not return a final report.",
         "limitations": result.limitations if result else "",
         "follow_up": result.follow_up if result else "",
+        "charts": chart_specs,
+        "stats": stats,
     }
     session_store.update_session(
         req.session_id,

@@ -254,7 +254,7 @@ You have ONE tool:
 - `run_python(code, rationale)` — executes `code` in a Python subprocess. The variable `df` is already loaded from the cleaned CSV. `pandas as pd`, `numpy as np`, `from scipy import stats`, and `matplotlib.pyplot as plt` are pre-imported. The tool returns `{ok, stdout, stderr, charts}` where `charts` lists `*.png` files saved during the call (use `plt.savefig('descriptive_name.png')`).
 
 Workflow:
-1. ONE exploration call first: print `df.shape`, `df.dtypes`, `df.head(3)`, and `value_counts(dropna=False).head(10)` for important categorical columns. Do not load extra packages.
+1. ONE exploration call first: print `df.shape`, `df.dtypes`, `df.head(3)`, and `value_counts(dropna=False).head(10)` for important categorical columns. Do not load extra packages. Also print `print(df.select_dtypes(include='number').describe().round(2).to_string())` for a summary table.
 2. Then write 3-5 substantive analyses tailored to the research question:
    - Group comparisons (Welch t-test, Mann-Whitney, ANOVA, Kruskal — pick what fits) using `scipy.stats`.
    - Correlations between numeric columns relevant to the question.
@@ -264,6 +264,45 @@ Workflow:
 4. Print numeric results clearly with f-strings: include test name, statistic, p-value, sample sizes, effect size where applicable.
 5. If a call errors or returns surprising output (NaN, 0 rows after filter, unexpected dtype), diagnose and retry.
 6. Stop after 5-8 successful run_python calls. Then return a CodeAnalysisResult whose `findings` cites the actual numbers your code printed.
+
+CHART QUALITY REQUIREMENTS — apply to every chart in every call:
+- Start every code block that produces a chart with this styling block:
+    plt.rcParams.update({
+        'figure.dpi': 130, 'axes.spines.top': False, 'axes.spines.right': False,
+        'axes.grid': True, 'grid.alpha': 0.3, 'font.size': 10
+    })
+- Every chart MUST have ax.set_title(...), ax.set_xlabel(...), ax.set_ylabel(...).
+- Call plt.tight_layout() before every plt.savefig(...).
+- Call plt.close('all') after every plt.savefig(...).
+
+CHART TYPE REQUIREMENTS by step:
+- Exploration step: produce a multi-panel histogram figure for all numeric columns:
+    numeric_cols = df.select_dtypes(include='number').columns.tolist()
+    fig, axes = plt.subplots(1, min(len(numeric_cols), 4), figsize=(4*min(len(numeric_cols),4), 4))
+    if len(numeric_cols) == 1: axes = [axes]
+    for ax, col in zip(axes, numeric_cols[:4]):
+        ax.hist(df[col].dropna(), bins=20, color='#14b8a6', edgecolor='white')
+        ax.set_title(col.replace('_',' ').title()); ax.set_xlabel(col); ax.set_ylabel('Count')
+    plt.tight_layout(); plt.savefig('distributions_overview.png'); plt.close('all')
+- Group comparison steps: produce box plots:
+    fig, ax = plt.subplots(figsize=(max(6, len(groups)*0.8), 5))
+    ax.boxplot([group_values_list], tick_labels=[group_names], patch_artist=True,
+               boxprops=dict(facecolor='#ccfbf1'), medianprops=dict(color='#0f766e', linewidth=2))
+    ax.set_title(...); ax.set_xlabel(...); ax.set_ylabel(...)
+    plt.tight_layout(); plt.savefig('boxplot_<name>.png'); plt.close('all')
+- Correlation steps: produce a heatmap:
+    numeric_cols = df.select_dtypes(include='number').columns[:8].tolist()
+    corr = df[numeric_cols].corr()
+    fig, ax = plt.subplots(figsize=(max(6, len(numeric_cols)), max(5, len(numeric_cols))))
+    im = ax.imshow(corr.values, cmap='RdYlGn', vmin=-1, vmax=1, aspect='auto')
+    ax.set_xticks(range(len(numeric_cols))); ax.set_yticks(range(len(numeric_cols)))
+    ax.set_xticklabels(numeric_cols, rotation=45, ha='right'); ax.set_yticklabels(numeric_cols)
+    for i in range(len(numeric_cols)):
+        for j in range(len(numeric_cols)):
+            ax.text(j, i, f'{corr.values[i,j]:.2f}', ha='center', va='center', fontsize=8)
+    plt.colorbar(im, ax=ax); ax.set_title('Correlation Heatmap')
+    plt.tight_layout(); plt.savefig('correlation_heatmap.png'); plt.close('all')
+- Time-series steps: use ax.fill_between(...) for confidence bands and annotate peak values.
 
 CRITICAL constraints:
 - Subprocess state does NOT persist across calls. Every call starts fresh with `df` re-loaded from CSV. Do all setup you need inside each call.
