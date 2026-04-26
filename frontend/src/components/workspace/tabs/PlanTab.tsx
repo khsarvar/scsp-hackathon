@@ -57,6 +57,8 @@ export default function PlanTab() {
           isAnalyzing={step === "analyzing"}
           scriptSessionId={sessionId}
           scriptEnabled={!!analysisResult}
+          sessionId={sessionId}
+          onPlanChange={(newPlan) => dispatch({ type: "SET_PLAN", plan: newPlan })}
         />
       </StepCard>
 

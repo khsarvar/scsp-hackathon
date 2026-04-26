@@ -368,7 +368,7 @@ literature_agent: Agent[LiteratureDeps, LiteratureReport] = Agent(
     deps_type=LiteratureDeps,
     output_type=LiteratureReport,
     instructions=LITERATURE_SYSTEM,
-    model_settings=ModelSettings(max_tokens=2048),
+    model_settings=ModelSettings(max_tokens=4096),
 )
 
 code_agent: Agent[CodeDeps, CodeAnalysisResult] = Agent(
@@ -793,6 +793,18 @@ async def plan_run(dataset_context: str) -> str:
         "For each step, briefly explain what will be done and why it matters for public health research. "
         "Focus on exploratory analysis appropriate for this dataset's structure. "
         "Keep the plan actionable and specific to the columns present."
+    )
+    result = await plan_agent.run(prompt)
+    return result.output
+
+
+async def plan_refine_run(current_plan: str, instruction: str) -> str:
+    """Revise an existing analysis plan according to a user instruction."""
+    prompt = (
+        f"Here is the current analysis plan:\n\n{current_plan}\n\n"
+        f"The user wants to change it with the following instruction:\n{instruction}\n\n"
+        "Please rewrite the full analysis plan incorporating the requested change. "
+        "Keep the same numbered-steps format. Only output the revised plan — no preamble or commentary."
     )
     result = await plan_agent.run(prompt)
     return result.output

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from routers import (
     upload, profile, analyze, chat, export,
-    discover, agent_clean, hypotheses, stats, literature,
+    discover, agent_clean, hypotheses, stats, literature, plan,
 )
 
 app = FastAPI(
@@ -34,6 +34,7 @@ app.include_router(agent_clean.router, prefix="/api")
 app.include_router(hypotheses.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(literature.router, prefix="/api")
+app.include_router(plan.router, prefix="/api")
 
 
 @app.get("/api/health")

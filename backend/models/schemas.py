@@ -147,3 +147,15 @@ class AskRequest(BaseModel):
     """Ask a free-form analytical question; the agent picks a test and explains."""
     session_id: str
     question: str
+
+
+class UpdatePlanRequest(BaseModel):
+    """Overwrite the analysis plan with user-edited text."""
+    session_id: str
+    plan: str
+
+
+class RefinePlanRequest(BaseModel):
+    """Ask the AI to revise the current analysis plan based on a user instruction."""
+    session_id: str
+    instruction: str

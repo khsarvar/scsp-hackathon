@@ -20,6 +20,7 @@ from services.llm_agents import (
     chat_agent_with_context,
     findings_run,
     plan_run,
+    plan_refine_run,
 )
 
 
@@ -79,6 +80,12 @@ def generate_analysis_plan(dataset_context: str) -> str:
     """Ask the model to propose a numbered analysis plan."""
     import asyncio
     return asyncio.run(plan_run(dataset_context))
+
+
+def refine_analysis_plan(current_plan: str, instruction: str) -> str:
+    """Ask the model to revise an existing plan based on a user instruction."""
+    import asyncio
+    return asyncio.run(plan_refine_run(current_plan, instruction))
 
 
 def generate_findings(

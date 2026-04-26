@@ -163,3 +163,29 @@ export async function streamLiterature(
 export function exportScriptUrl(sessionId: string): string {
   return `${BASE}/export/${sessionId}/script`;
 }
+
+/** Overwrite the analysis plan with user-edited text. */
+export async function updatePlan(
+  sessionId: string,
+  plan: string,
+): Promise<{ session_id: string; analysis_plan: string }> {
+  const res = await fetch(`${BASE}/plan`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, plan }),
+  });
+  return handleResponse(res);
+}
+
+/** Ask the AI to revise the plan based on a user instruction. */
+export async function refinePlan(
+  sessionId: string,
+  instruction: string,
+): Promise<{ session_id: string; analysis_plan: string }> {
+  const res = await fetch(`${BASE}/plan/refine`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, instruction }),
+  });
+  return handleResponse(res);
+}

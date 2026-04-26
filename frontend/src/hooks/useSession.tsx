@@ -39,7 +39,8 @@ type Action =
   | { type: "LITERATURE_EVENT"; event: AgentEvent }
   | { type: "LITERATURE_RESET" }
   | { type: "SET_LITERATURE_RESULT"; result: LiteratureResult }
-  | { type: "SET_ACTIVE_TAB"; tab: WorkspaceTab };
+  | { type: "SET_ACTIVE_TAB"; tab: WorkspaceTab }
+  | { type: "SET_PLAN"; plan: string };
 
 const initialState: AppState = {
   step: "idle",
@@ -124,6 +125,12 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, literatureResult: action.result };
     case "SET_ACTIVE_TAB":
       return { ...state, activeTab: action.tab };
+    case "SET_PLAN":
+      if (!state.profileResult) return state;
+      return {
+        ...state,
+        profileResult: { ...state.profileResult, analysis_plan: action.plan },
+      };
     default:
       return state;
   }
