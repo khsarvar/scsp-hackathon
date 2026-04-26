@@ -50,12 +50,15 @@ def discover(
     workspace: Optional[Workspace] = None,
     max_steps: int = 15,
     on_event: EventCallback = None,
+    selected_dataset_ids: list[str] | None = None,
 ) -> tuple[Workspace, Optional[str], list]:
     """Run the discovery agent. Returns (workspace, primary_alias, events)."""
     workspace = workspace or Workspace()
     events: list = []
     emit = _make_emitter(events, on_event)
-    result = asyncio.run(discover_run(question, workspace, emit, max_steps=max_steps))
+    result = asyncio.run(
+        discover_run(question, workspace, emit, max_steps=max_steps, selected_dataset_ids=selected_dataset_ids)
+    )
     primary_alias: Optional[str]
     if result is not None and result.primary_alias:
         primary_alias = result.primary_alias

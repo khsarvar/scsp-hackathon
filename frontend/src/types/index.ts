@@ -165,24 +165,58 @@ export interface RunTestResponse {
   result: StatsTestResult;
 }
 
+export interface DatasetColumn {
+  field: string;
+  name: string;
+  type: string;
+}
+
+export interface DatasetRecommendation {
+  id: string;
+  name: string;
+  description: string;
+  row_count: number | null;
+  categories: string[];
+  tags: string[];
+  columns: DatasetColumn[];
+}
+
+export interface DiscoverCandidate {
+  alias: string;
+  rows: number;
+  cols: number;
+  columns: string[];
+  is_derived: boolean;
+  source_title: string;
+  parents: string[];
+}
+
 export interface DiscoverResultPayload {
   ok: boolean;
   session_id: string;
-  filename: string;
-  primary_alias: string;
-  row_count: number;
-  col_count: number;
-  columns: string[];
-  preview_rows: Record<string, unknown>[];
-  file_size_bytes: number;
+  // present when pending_join === false
+  filename?: string;
+  primary_alias?: string;
+  row_count?: number;
+  col_count?: number;
+  columns?: string[];
+  preview_rows?: Record<string, unknown>[];
+  file_size_bytes?: number;
   provenance?: DataProvenance | null;
+  // present when pending_join === true (HITL checkpoint)
+  pending_join?: boolean;
+  candidates?: DiscoverCandidate[];
+  suggested_alias?: string;
 }
 
 // App state
 export type AppStep =
   | "idle"
   | "uploading"
+  | "recommending"
+  | "recommended"
   | "discovering"
+  | "join_decision"
   | "preview"
   | "profiling"
   | "planned"
@@ -224,6 +258,12 @@ export interface AppState {
   askEvents: AgentEvent[];
   hypotheses: Hypothesis[];
   lastTestResult: RunTestResponse | null;
+  // Catalog recommendations (pre-fetch HITL)
+  recommendations: DatasetRecommendation[] | null;
+  recommendationQuestion: string | null;
+  // HITL join decision (post-fetch)
+  discoverCandidates: DiscoverCandidate[] | null;
+  discoverSuggestedAlias: string | null;
   // Literature review
   literatureEvents: AgentEvent[];
   literatureResult: LiteratureResult | null;

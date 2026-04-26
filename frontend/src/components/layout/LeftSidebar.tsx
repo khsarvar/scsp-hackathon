@@ -4,11 +4,10 @@ import { useState, useMemo } from "react";
 import clsx from "clsx";
 import DropZone from "@/components/upload/DropZone";
 import { useSession } from "@/hooks/useSession";
-import { profileDataset, streamDiscover, streamLiterature } from "@/lib/api";
+import { profileDataset, recommendDatasets, streamLiterature } from "@/lib/api";
 import { consumeAgentStream } from "@/hooks/useAgentStream";
 import type {
   AgentEvent,
-  DiscoverResultPayload,
   LiteratureResult,
   UploadResponse,
 } from "@/types";
@@ -92,8 +91,10 @@ export default function LeftSidebar() {
 
   const busy =
     state.step === "uploading" ||
+    state.step === "recommending" ||
     state.step === "profiling" ||
     state.step === "discovering" ||
+    state.step === "join_decision" ||
     discovering;
 
   const profileAfterUpload = async (result: UploadResponse) => {
@@ -118,10 +119,9 @@ export default function LeftSidebar() {
     setDiscoverError(null);
     dispatch({ type: "DISCOVER_RESET" });
     dispatch({ type: "LITERATURE_RESET" });
-    dispatch({ type: "SET_STEP", step: "discovering" });
+    dispatch({ type: "SET_STEP", step: "recommending" });
 
     // Kick off literature review in parallel — same research question, no session yet.
-    // Persistence to the session happens after discover finishes (see below).
     const literaturePromise = (async () => {
       let result: LiteratureResult | null = null;
       try {
@@ -141,51 +141,24 @@ export default function LeftSidebar() {
           }
         });
       } catch {
-        // non-fatal: discover continues regardless
+        // non-fatal
       }
       return result;
     })();
 
     try {
-      const res = await streamDiscover(q);
-      const payloadHolder: { value: DiscoverResultPayload | null; error: string | null } = {
-        value: null,
-        error: null,
-      };
-      await consumeAgentStream(res, (event: AgentEvent) => {
-        dispatch({ type: "DISCOVER_EVENT", event });
-        if (event.type === "result") {
-          const data = (event as { data: Record<string, unknown> }).data;
-          if (data.ok) {
-            payloadHolder.value = data as unknown as DiscoverResultPayload;
-          } else if (typeof data.error === "string") {
-            payloadHolder.error = data.error;
-          }
-        }
+      const recResult = await recommendDatasets(q);
+      // Always go to "recommended" — DiscoverTab auto-skips picker if results are empty
+      dispatch({
+        type: "SET_RECOMMENDATIONS",
+        recommendations: recResult.ok ? recResult.results : [],
+        question: q,
       });
-      const payload = payloadHolder.value;
-      if (payload) {
-        const upload: UploadResponse = {
-          session_id: payload.session_id,
-          filename: payload.filename,
-          row_count: payload.row_count,
-          col_count: payload.col_count,
-          columns: payload.columns,
-          preview_rows: payload.preview_rows,
-          file_size_bytes: payload.file_size_bytes,
-          provenance: payload.provenance,
-        };
-        await profileAfterUpload(upload);
-      } else {
-        const message = payloadHolder.error ?? "Discovery agent did not produce a primary dataset.";
-        setDiscoverError(message);
-        dispatch({ type: "SET_STEP", step: "idle" });
-      }
+      dispatch({ type: "SET_STEP", step: "recommended" });
     } catch (err) {
       setDiscoverError((err as Error).message);
       dispatch({ type: "SET_STEP", step: "idle" });
     } finally {
-      // Let the literature stream finish in the background; don't block the UI on it.
       literaturePromise.catch(() => {});
       setDiscovering(false);
     }

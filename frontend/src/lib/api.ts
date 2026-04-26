@@ -5,6 +5,7 @@ import type {
   ChatMessage,
   HypothesesResponse,
   RunTestResponse,
+  DatasetRecommendation,
 } from "@/types";
 
 const BASE = "/api";
@@ -87,6 +88,42 @@ export async function exportMemo(sessionId: string): Promise<Blob> {
 }
 
 // ---------- Agentic endpoints ----------
+
+/** Search the CDC catalog for dataset recommendations. Returns fast — no LLM involved. */
+export async function recommendDatasets(
+  question: string
+): Promise<{ ok: boolean; question: string; results: DatasetRecommendation[] }> {
+  const res = await fetch(`${BASE}/discover/recommend`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  return handleResponse(res);
+}
+
+/** Stream the CDC discovery agent with optional pre-selected dataset IDs. */
+export async function streamDiscoverWithSelection(
+  question: string,
+  selectedDatasetIds: string[]
+): Promise<Response> {
+  const res = await fetch(`${BASE}/discover`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, selected_dataset_ids: selectedDatasetIds }),
+  });
+  if (!res.ok) throw new Error(res.statusText);
+  return res;
+}
+
+/** HITL: after the discover agent pauses, select which workspace frame to profile. */
+export async function selectFrame(sessionId: string, alias: string): Promise<UploadResponse> {
+  const res = await fetch(`${BASE}/discover/select`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, alias }),
+  });
+  return handleResponse<UploadResponse>(res);
+}
 
 /** Stream the CDC discovery agent. Returns a Response whose body is an SSE stream. */
 export async function streamDiscover(question: string): Promise<Response> {

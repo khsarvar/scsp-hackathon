@@ -672,11 +672,25 @@ async def clean_run(workspace: Workspace, alias: str, emit: EventEmit, max_steps
     return result
 
 
-async def discover_run(question: str, workspace: Workspace, emit: EventEmit, max_steps: int = 15) -> Optional[DiscoverResult]:
+async def discover_run(
+    question: str,
+    workspace: Workspace,
+    emit: EventEmit,
+    max_steps: int = 15,
+    selected_dataset_ids: list[str] | None = None,
+) -> Optional[DiscoverResult]:
     deps = DiscoverDeps(workspace=workspace, emit=emit)
     user_msg = f"Research question: {question}\n\nFind and prepare the right CDC dataset(s)."
     if workspace.frames:
         user_msg += f"\n\nWorkspace already contains: {workspace.summary()}"
+    if selected_dataset_ids:
+        ids_str = ", ".join(f"`{did}`" for did in selected_dataset_ids)
+        user_msg += (
+            f"\n\nIMPORTANT: The user has pre-selected these CDC dataset IDs — fetch them directly "
+            f"without calling the scout tool: {ids_str}. "
+            "Call get_dataset_schema first to inspect each, then fetch_dataset for each ID. "
+            "If multiple IDs are provided, join them appropriately after fetching."
+        )
     result = await _run_with_events(
         discover_agent,
         user_msg,

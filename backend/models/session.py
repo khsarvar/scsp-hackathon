@@ -28,6 +28,9 @@ class SessionData:
     hypotheses: list[dict[str, Any]] = field(default_factory=list)
     test_history: list[dict[str, Any]] = field(default_factory=list)
 
+    # HITL: set to True after discover when ≥2 frames exist; cleared after /discover/select
+    pending_join: bool = False
+
     # Literature review (PubMed) — last completed report for this session
     literature_question: Optional[str] = None
     literature_summary: Optional[str] = None

@@ -18,6 +18,8 @@ import type {
   LiteratureResult,
   WorkspaceTab,
   SessionHistory,
+  DiscoverCandidate,
+  DatasetRecommendation,
 } from "@/types";
 
 type Action =
@@ -40,7 +42,11 @@ type Action =
   | { type: "LITERATURE_RESET" }
   | { type: "SET_LITERATURE_RESULT"; result: LiteratureResult }
   | { type: "SET_ACTIVE_TAB"; tab: WorkspaceTab }
-  | { type: "SET_PLAN"; plan: string };
+  | { type: "SET_PLAN"; plan: string }
+  | { type: "SET_JOIN_CANDIDATES"; candidates: DiscoverCandidate[]; suggestedAlias: string; sessionId: string }
+  | { type: "CLEAR_JOIN_CANDIDATES" }
+  | { type: "SET_RECOMMENDATIONS"; recommendations: DatasetRecommendation[]; question: string }
+  | { type: "CLEAR_RECOMMENDATIONS" };
 
 const initialState: AppState = {
   step: "idle",
@@ -55,6 +61,10 @@ const initialState: AppState = {
   askEvents: [],
   hypotheses: [],
   lastTestResult: null,
+  recommendations: null,
+  recommendationQuestion: null,
+  discoverCandidates: null,
+  discoverSuggestedAlias: null,
   literatureEvents: [],
   literatureResult: null,
   activeTab: "discover",
@@ -104,7 +114,14 @@ function reducer(state: AppState, action: Action): AppState {
     case "DISCOVER_EVENT":
       return { ...state, discoverEvents: [...state.discoverEvents, action.event] };
     case "DISCOVER_RESET":
-      return { ...state, discoverEvents: [] };
+      return {
+        ...state,
+        discoverEvents: [],
+        discoverCandidates: null,
+        discoverSuggestedAlias: null,
+        recommendations: null,
+        recommendationQuestion: null,
+      };
     case "CLEAN_EVENT":
       return { ...state, cleanEvents: [...state.cleanEvents, action.event] };
     case "CLEAN_RESET":
@@ -130,6 +147,31 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         profileResult: { ...state.profileResult, analysis_plan: action.plan },
+      };
+    case "SET_JOIN_CANDIDATES":
+      return {
+        ...state,
+        sessionId: action.sessionId,
+        discoverCandidates: action.candidates,
+        discoverSuggestedAlias: action.suggestedAlias,
+      };
+    case "CLEAR_JOIN_CANDIDATES":
+      return {
+        ...state,
+        discoverCandidates: null,
+        discoverSuggestedAlias: null,
+      };
+    case "SET_RECOMMENDATIONS":
+      return {
+        ...state,
+        recommendations: action.recommendations,
+        recommendationQuestion: action.question,
+      };
+    case "CLEAR_RECOMMENDATIONS":
+      return {
+        ...state,
+        recommendations: null,
+        recommendationQuestion: null,
       };
     default:
       return state;

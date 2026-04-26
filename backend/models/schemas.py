@@ -125,9 +125,17 @@ class ChatRequest(BaseModel):
 
 # ---------- akbar/init agent upgrades ----------
 
+class RecommendRequest(BaseModel):
+    """Search the CDC catalog and return dataset recommendations for a research question."""
+    question: str
+
+
 class DiscoverRequest(BaseModel):
     """Run the CDC discovery agent to fetch + prepare datasets for a research question."""
     question: str
+    selected_dataset_ids: list[str] = []
+    """Optional: user-pre-selected CDC dataset IDs from the recommend step. If provided,
+    the agent skips scouting and fetches these directly."""
 
 
 class HypothesesRequest(BaseModel):

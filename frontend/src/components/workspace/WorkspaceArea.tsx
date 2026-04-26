@@ -9,8 +9,11 @@ import { useSession } from "@/hooks/useSession";
 import type { WorkspaceTab } from "@/types";
 
 const STEP_TO_TAB: Record<string, WorkspaceTab> = {
+  recommending: "discover",
+  recommended: "discover",
   discovering: "discover",
   uploading: "discover",
+  join_decision: "discover",
   preview: "discover",
   profiling: "discover",
   planned: "plan",
