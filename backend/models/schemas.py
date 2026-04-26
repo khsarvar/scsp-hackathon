@@ -18,6 +18,7 @@ class ColumnProfile(BaseModel):
     min: Optional[float] = None
     max: Optional[float] = None
     mean: Optional[float] = None
+    median: Optional[float] = None
     std: Optional[float] = None
     is_datetime_like: bool = False
     is_categorical: bool = False

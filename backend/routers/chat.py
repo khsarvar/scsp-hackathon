@@ -49,12 +49,19 @@ async def chat(req: ChatRequest):
         literature_summary=sess.literature_summary,
     ) if profile else ""
 
-    # Update chat history
+    # Use history sent by the frontend (correctly includes prior assistant responses).
+    # Fall back to server-side history if the client sent nothing.
+    if req.history:
+        history_for_llm = [{"role": m.role, "content": m.content} for m in req.history]
+    else:
+        history_for_llm = sess.chat_history
+
+    # Persist user turn server-side (used as fallback and for export/recovery).
     new_history = sess.chat_history + [{"role": "user", "content": req.message}]
     session_store.update_session(req.session_id, chat_history=new_history)
 
     return StreamingResponse(
-        _sse_generator(req.message, dataset_context, sess.chat_history),
+        _sse_generator(req.message, dataset_context, history_for_llm),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

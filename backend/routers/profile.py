@@ -68,7 +68,7 @@ def profile_dataset(req: ProfileRequest):
                 "column": col["name"],
                 "count": profile["row_count"] - col["missing_count"],
                 "mean": col["mean"],
-                "median": col["mean"],  # approx before cleaning
+                "median": col.get("median"),
                 "std": col["std"],
                 "min": col["min"],
                 "max": col["max"],

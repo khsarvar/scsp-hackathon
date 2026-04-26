@@ -129,6 +129,7 @@ def profile_dataframe(df: pd.DataFrame) -> dict[str, Any]:
                 col_profile["min"] = _safe_float(numeric_series.min())
                 col_profile["max"] = _safe_float(numeric_series.max())
                 col_profile["mean"] = _safe_float(numeric_series.mean())
+                col_profile["median"] = _safe_float(numeric_series.median())
                 col_profile["std"] = _safe_float(numeric_series.std())
                 col_profile["outliers"] = detect_outliers_iqr(numeric_series)
 
