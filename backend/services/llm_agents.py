@@ -783,7 +783,7 @@ async def code_analysis_run(
     return result, steps
 
 
-async def literature_run(question: str, emit: EventEmit, max_steps: int = 6) -> Optional[LiteratureReport]:
+async def literature_run(question: str, emit: EventEmit, max_steps: int = 12) -> Optional[LiteratureReport]:
     deps = LiteratureDeps(emit=emit)
     user_msg = (
         f"Research question: {question}\n\n"

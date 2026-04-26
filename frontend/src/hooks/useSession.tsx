@@ -75,6 +75,11 @@ function reducer(state: AppState, action: Action): AppState {
     case "SET_STEP":
       return { ...state, step: action.step, error: null };
     case "SET_UPLOAD":
+      // Don't wipe literatureEvents/literatureResult here — the sidebar fires
+      // literature search in parallel with discover, and discover-finish triggers
+      // SET_UPLOAD. Clearing literature here would erase the parallel work.
+      // Use LITERATURE_RESET (sidebar does this when starting a new discover) or
+      // RESET to clear it explicitly.
       return {
         ...state,
         step: "preview",
@@ -87,8 +92,6 @@ function reducer(state: AppState, action: Action): AppState {
         askEvents: [],
         hypotheses: [],
         lastTestResult: null,
-        literatureEvents: [],
-        literatureResult: null,
         activeTab: "discover",
       };
     case "SET_PROFILE":

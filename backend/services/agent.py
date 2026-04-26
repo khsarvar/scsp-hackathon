@@ -123,7 +123,7 @@ def run_code_analysis(
 
 def review_literature(
     question: str,
-    max_steps: int = 6,
+    max_steps: int = 12,
     on_event: EventCallback = None,
 ) -> tuple[Optional[LiteratureReport], list]:
     """Run the literature agent. Returns (report, events)."""
