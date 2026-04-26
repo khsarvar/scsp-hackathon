@@ -89,7 +89,7 @@ export async function exportMemo(sessionId: string): Promise<Blob> {
 
 // ---------- Agentic endpoints ----------
 
-/** Search the CDC catalog for dataset recommendations. Returns fast — no LLM involved. */
+/** Search the open-data catalogs for dataset recommendations. Returns fast — no LLM involved. */
 export async function recommendDatasets(
   question: string
 ): Promise<{ ok: boolean; question: string; results: DatasetRecommendation[] }> {
@@ -101,7 +101,7 @@ export async function recommendDatasets(
   return handleResponse(res);
 }
 
-/** Stream the CDC discovery agent with optional pre-selected dataset IDs. */
+/** Stream the open-data discovery agent with optional pre-selected dataset IDs. */
 export async function streamDiscoverWithSelection(
   question: string,
   selectedDatasetIds: string[]
@@ -125,7 +125,7 @@ export async function selectFrame(sessionId: string, alias: string): Promise<Upl
   return handleResponse<UploadResponse>(res);
 }
 
-/** Stream the CDC discovery agent. Returns a Response whose body is an SSE stream. */
+/** Stream the open-data discovery agent. Returns a Response whose body is an SSE stream. */
 export async function streamDiscover(question: string): Promise<Response> {
   const res = await fetch(`${BASE}/discover`, {
     method: "POST",

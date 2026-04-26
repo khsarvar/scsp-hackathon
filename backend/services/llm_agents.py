@@ -33,6 +33,8 @@ from services.discovery import (
     Workspace,
     DISCOVERY_OPS_DOC,
     JOIN_OPS_DOC,
+    SOCRATA_PORTALS_DOC,
+    DEFAULT_DOMAIN,
     apply_discovery_op,
     search_catalog as _search_catalog,
     get_dataset_schema as _get_dataset_schema,
@@ -63,6 +65,7 @@ class DiscoverResult(BaseModel):
 class ScoutRecommendation(BaseModel):
     """Final pick from the catalog scout sub-agent."""
     dataset_id: str
+    domain: str = Field(default=DEFAULT_DOMAIN, description="Socrata portal that owns the dataset, e.g. data.cdc.gov, data.cityofnewyork.us.")
     rationale: str
     recommended_select: Optional[str] = None
     recommended_where: Optional[str] = None
@@ -170,43 +173,52 @@ Rules:
 - A typical clean is 4-8 ops. Don't loop forever.
 """
 
-DISCOVER_SYSTEM = f"""You are a data acquisition agent. Given a research question, find the right CDC dataset(s) on data.cdc.gov, fetch them into the workspace, and (if multiple are needed) join them into a single analysis-ready frame.
+DISCOVER_SYSTEM = f"""You are a data acquisition agent. Given a research question, find the right Socrata-hosted dataset(s), fetch them into the workspace, and (if multiple are needed) join them into a single analysis-ready frame.
+
+You can search across MANY open-data portals — federal (CDC, CMS, HHS, DOE), states (NY, CA, TX, WA), and cities (NYC, Chicago, LA, SF, Seattle, Austin, Boston, DC). Pick the portal whose mission matches the question.
+
+{SOCRATA_PORTALS_DOC}
 
 You have two tools:
-- `scout(question)` — RECOMMENDED FIRST STEP for single-dataset questions. A fast Haiku sub-agent searches the catalog and inspects schemas, returning ONE recommended dataset_id with optional pre-checked SoQL hints. Saves 3-5s vs running search_catalog + get_dataset_schema yourself.
+- `scout(question)` — RECOMMENDED FIRST STEP for single-dataset questions. A fast Haiku sub-agent searches across ALL portals and inspects schemas, returning ONE recommended (domain, dataset_id) with optional pre-checked SoQL hints. Saves 3-5s vs running search_catalog + get_dataset_schema yourself.
 - `discovery_op(op, args, rationale)` — dispatches to these ops:
 {DISCOVERY_OPS_DOC}
 {JOIN_OPS_DOC}
 
 When the workspace contains a single analysis-ready alias for the question, return a DiscoverResult with that alias and a summary.
 
-If the question needs multiple datasets, you can call scout twice in parallel (one per sub-question). Multiple discovery_op calls in the same turn (e.g. fetch_dataset for both aliases) also run in parallel.
+If the question needs multiple datasets (potentially from different portals — e.g. CDC vaccination + NYC 311), you can call scout multiple times in parallel. Multiple discovery_op calls in the same turn (e.g. fetch_dataset for both aliases) also run in parallel.
 
 Rules:
-- Start with search_catalog using terms from the question. Look at descriptions, not just names.
+- Use the portal list above to narrow search. For an NYC-specific question, search `domain='data.cityofnewyork.us'`. For a federal-health question, try `domain='data.cdc.gov,data.cms.gov,healthdata.gov'`. When unsure, omit `domain` and search all.
+- search_catalog results include a `domain` field — ALWAYS pass that same `domain` to get_dataset_schema and fetch_dataset for that dataset, otherwise you'll hit the wrong host and get 404s.
 - Before fetch_dataset, call get_dataset_schema so your SoQL `select`/`where` reference real fields.
 - ALWAYS pass an explicit `limit` to fetch_dataset of at least 25000 (cap 100000). Socrata's server-side default is only 1000 rows, which is rarely enough. Use SoQL `where` to filter server-side (e.g. `where="year >= 2020 AND state = 'CA'"`) — that's how you keep result sizes manageable, NOT by lowering limit.
-- BE LIBERAL WITH FILTERS. When the question mentions a state, year, or category, first try fetching WITHOUT that filter (or with a wider one). Most CDC datasets store state names in unpredictable forms ("Florida" vs "FL" vs "florida") and may not include every jurisdiction. If you must filter, inspect the schema's sample values first. If a fetch returns 0 rows, that is a FAILURE — relax the filter and retry, do not finish on an empty dataset.
+- BE LIBERAL WITH FILTERS. When the question mentions a state, year, or category, first try fetching WITHOUT that filter (or with a wider one). Datasets store state/borough/category names in unpredictable forms ("Florida" vs "FL", "MANHATTAN" vs "Manhattan"). If you must filter, inspect the schema's sample values first. If a fetch returns 0 rows, that is a FAILURE — relax the filter and retry, do not finish on an empty dataset.
 - If two datasets are needed, fetch both with distinct aliases, then merge_datasets (or aggregate_dataset first if grains differ). A merge that returns 0 rows means the join keys don't overlap — inspect both sides before retrying.
 - SoQL WHERE syntax: use LIKE with % wildcards for fuzzy matching (e.g. `dimension LIKE '%6 Month%'`). Do NOT use ILIKE — Socrata does not support it and will return a 400 error.
+- For LARGE datasets (millions of rows: FHV/taxi trips, 311, crime), AGGREGATE SERVER-SIDE instead of fetching raw rows. Pass aggregations via fetch_dataset's `group` and `having` arguments — NEVER embed `group by ...` inside the `select` string (Socrata returns a 400). Correct example: `select="borough, date_extract_hh(pickup_datetime) as hr, count(*) as n", group="borough, date_extract_hh(pickup_datetime)"`. Every non-aggregate column in `select` must also appear in `group` (referenced as the EXPRESSION, not the `as` alias).
 - Before finishing, sanity-check the output row count. If a merge of A rows × B rows on key K produced far more rows than max(A, B), the join is a cartesian product — you are missing a key column (e.g. a year or season field).
 - Never finish if the primary alias is empty or the row count is suspicious.
-- Do not invent dataset ids. Only use ids returned by search_catalog.
+- Do not invent dataset ids or domains. Only use values returned by search_catalog.
 """
 
-SCOUT_SYSTEM = """You are a fast catalog scout. Given a research question, find the single best CDC dataset to fetch.
+SCOUT_SYSTEM = f"""You are a fast catalog scout. Given a research question, find the single best Socrata dataset to fetch — ACROSS ALL approved open-data portals (federal, state, city), not just CDC.
+
+{SOCRATA_PORTALS_DOC}
 
 Tools:
-- search_catalog(query, limit=5): full-text search the CDC catalog
-- get_dataset_schema(dataset_id): column names + sample values for one dataset
+- search_catalog(query, limit=5, domain=None): full-text search. Pass `domain=None` for cross-portal search, or a specific domain when the question clearly maps to one (e.g. NYC question → 'data.cityofnewyork.us'). You can also pass a comma-separated subset (e.g. 'data.cdc.gov,data.cms.gov').
+- get_dataset_schema(dataset_id, domain): column names + sample values for one dataset. `domain` MUST match the portal returned by search_catalog.
 
 Workflow:
-1. ONE search_catalog call with terms from the question.
-2. Up to 2 get_dataset_schema calls in parallel on the most promising candidates.
-3. Return a ScoutRecommendation. Be concise.
+1. ONE search_catalog call with terms from the question, picking the right `domain` scope from the portal list above.
+2. Up to 2 get_dataset_schema calls in parallel on the most promising candidates (using each candidate's `domain` from the search results).
+3. Return a ScoutRecommendation including BOTH dataset_id AND domain. Be concise.
 
 Rules:
-- If the question mentions a state, year, or category, do NOT include it in recommended_where unless you SAW that exact value in the schema's sample_values. CDC datasets are inconsistent about jurisdictional naming. Better to fetch unfiltered.
+- If the question mentions a state, city, year, or category, do NOT include it in recommended_where unless you SAW that exact value in the schema's sample_values. Datasets are inconsistent about naming.
+- Always set the `domain` field on your recommendation to the portal that owns the dataset. The main agent will pass it through to fetch_dataset.
 - Return at most ONE recommendation. The main agent does the actual fetching.
 - Stop after returning the recommendation. Do not chain more searches.
 """
@@ -493,18 +505,23 @@ async def scout_search_catalog(
     ctx: RunContext[ScoutDeps],
     query: str,
     limit: int = 5,
+    domain: Optional[str] = None,
 ) -> str:
-    """Full-text search the CDC catalog. Returns top-N candidates with name, description, and column field names."""
+    """Full-text search the Socrata catalog across one or many portals. Returns top-N candidates with name, description, domain, and column field names. Pass `domain=None` to search ALL approved portals, a single domain string, or a comma-separated list."""
     ws = Workspace()
-    r = _search_catalog(ws, query, limit)
+    r = _search_catalog(ws, query, limit, domain=domain)
     return json.dumps(_truncate_result(r), default=str)
 
 
 @scout_agent.tool
-async def scout_get_schema(ctx: RunContext[ScoutDeps], dataset_id: str) -> str:
-    """Get full column schema for one dataset (names, types, descriptions)."""
+async def scout_get_schema(
+    ctx: RunContext[ScoutDeps],
+    dataset_id: str,
+    domain: str = DEFAULT_DOMAIN,
+) -> str:
+    """Get full column schema for one dataset (names, types, descriptions). `domain` must match the Socrata portal that owns the dataset (use the `domain` field from search_catalog)."""
     ws = Workspace()
-    r = _get_dataset_schema(ws, dataset_id)
+    r = _get_dataset_schema(ws, dataset_id, domain=domain)
     return json.dumps(_truncate_result(r), default=str)
 
 
@@ -877,7 +894,10 @@ def _truncate_result(r: dict) -> dict:
         return r
     out = dict(r)
     if "results" in out and isinstance(out["results"], list):
-        out["results"] = [{"id": x.get("id"), "name": x.get("name")} for x in out["results"]]
+        out["results"] = [
+            {"id": x.get("id"), "name": x.get("name"), "domain": x.get("domain")}
+            for x in out["results"]
+        ]
     if "preview" in out:
         out["preview"] = f"<{len(out['preview'])} rows>"
     if "columns" in out and isinstance(out["columns"], list) and len(out["columns"]) > 12:

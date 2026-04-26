@@ -13,7 +13,7 @@ export const TEAL_PALETTE = [
 export const STEP_LABELS: Record<string, string> = {
   idle: "Waiting for upload",
   uploading: "Uploading...",
-  discovering: "Discovering CDC datasets...",
+  discovering: "Discovering datasets...",
   preview: "Dataset preview",
   profiling: "Profiling dataset...",
   planned: "Analysis plan ready",

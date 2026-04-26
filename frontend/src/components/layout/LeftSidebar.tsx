@@ -20,8 +20,8 @@ export default function LeftSidebar() {
 
     // dataset_id → { title, description } from get_dataset_schema results
     const schemaByDatasetId: Record<string, { title: string; description: string }> = {};
-    // alias → { datasetId, where } from fetch_dataset tool_call args
-    const fetchArgsByAlias: Record<string, { datasetId: string; where?: string }> = {};
+    // alias → { datasetId, domain, where } from fetch_dataset tool_call args
+    const fetchArgsByAlias: Record<string, { datasetId: string; domain?: string; where?: string }> = {};
 
     for (const ev of state.discoverEvents) {
       const e = ev as Record<string, unknown>;
@@ -35,6 +35,7 @@ export default function LeftSidebar() {
         if (args?.alias) {
           fetchArgsByAlias[args.alias as string] = {
             datasetId: (args.dataset_id as string) ?? "",
+            domain: args.domain as string | undefined,
             where: args.where as string | undefined,
           };
         }
@@ -56,6 +57,7 @@ export default function LeftSidebar() {
       rows: number;
       cols: number;
       datasetId: string;
+      domain: string;
       title: string;
       description: string;
       where?: string;
@@ -69,12 +71,14 @@ export default function LeftSidebar() {
           const alias = r.alias as string;
           const fetchArgs = fetchArgsByAlias[alias];
           const datasetId = fetchArgs?.datasetId ?? "";
+          const domain = fetchArgs?.domain ?? (r.domain as string | undefined) ?? "data.cdc.gov";
           const schema = datasetId ? schemaByDatasetId[datasetId] : undefined;
           datasets.push({
             alias,
             rows: (r.rows as number) ?? 0,
             cols: Array.isArray(r.columns) ? (r.columns as unknown[]).filter(c => c !== "...").length : 0,
             datasetId,
+            domain,
             title: schema?.title ?? "",
             description: schema?.description ?? "",
             where: fetchArgs?.where,
@@ -188,10 +192,10 @@ export default function LeftSidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
-        {/* CDC Discover */}
+        {/* Open-data Discover */}
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-            Discover (CDC)
+            Discover Open Data
           </p>
           <textarea
             value={discoverQuestion}
@@ -202,7 +206,7 @@ export default function LeftSidebar() {
                 handleDiscover();
               }
             }}
-            placeholder="Research question, e.g. How does flu vaccination relate to hospitalization rates by state? (Enter to submit, Shift+Enter for newline)"
+            placeholder="Research question — federal, state, or city. e.g. Do NYC Uber pickups peak at different hours by borough? Or: How does flu vaccination relate to hospitalization rates by state?"
             rows={3}
             disabled={busy}
             className={clsx(
@@ -221,7 +225,7 @@ export default function LeftSidebar() {
                 : "bg-slate-100 text-slate-300 cursor-not-allowed"
             )}
           >
-            {discovering ? "Searching CDC catalog..." : "Discover datasets"}
+            {discovering ? "Searching open-data catalogs..." : "Discover datasets"}
           </button>
           {discoverError && (
             <p className="mt-1.5 text-xs text-red-500">{discoverError}</p>
@@ -260,7 +264,7 @@ export default function LeftSidebar() {
                       )}
                     </div>
 
-                    {/* CDC dataset title */}
+                    {/* Dataset title */}
                     {ds.title && (
                       <p className="text-[11px] text-slate-500 leading-snug">{ds.title}</p>
                     )}
@@ -280,12 +284,12 @@ export default function LeftSidebar() {
                     {/* Source link */}
                     {ds.datasetId && (
                       <a
-                        href={`https://data.cdc.gov/d/${ds.datasetId}`}
+                        href={`https://${ds.domain}/d/${ds.datasetId}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-0.5 text-[10px] text-sky-500 hover:text-sky-700 hover:underline"
                       >
-                        View on CDC ↗
+                        View on {ds.domain} ↗
                       </a>
                     )}
                   </div>

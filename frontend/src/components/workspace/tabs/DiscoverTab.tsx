@@ -105,7 +105,7 @@ export default function DiscoverTab() {
         <div className="rounded-xl border border-slate-200 bg-white p-5 flex items-center gap-4">
           <div className="w-5 h-5 border-2 border-teal-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
           <div>
-            <p className="text-sm font-medium text-slate-700">Searching CDC catalog...</p>
+            <p className="text-sm font-medium text-slate-700">Searching open-data catalogs...</p>
             <p className="text-xs text-slate-400 mt-0.5">Finding relevant datasets for your question</p>
           </div>
         </div>
@@ -138,11 +138,12 @@ export default function DiscoverTab() {
   if (step === "discovering") {
     return (
       <div className="space-y-4">
-        <StepCard title="Discovering CDC datasets" status="loading" collapsible={false}>
+        <StepCard title="Discovering datasets" status="loading" collapsible={false}>
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
-              The agent is searching the CDC Socrata catalog, fetching candidate
-              datasets, and joining them as needed. Live reasoning below.
+              The agent is searching open-data catalogs (federal, state, and city),
+              fetching candidate datasets, and joining them as needed. Live reasoning
+              below.
             </p>
             <ThoughtStream
               events={discoverEvents}
@@ -160,7 +161,7 @@ export default function DiscoverTab() {
       <div className="space-y-4">
         {discoverEvents.length > 0 && (
           <StepCard
-            title="CDC Discovery Trace"
+            title="Discovery Trace"
             status="done"
             collapsible
             defaultOpen={false}
@@ -177,8 +178,9 @@ export default function DiscoverTab() {
   if (!uploadResult && !profileResult && discoverEvents.length === 0) {
     return (
       <div className="text-sm text-slate-400 px-2 py-8">
-        No dataset loaded yet. Use the left sidebar to upload a CSV or run a CDC
-        discovery search — its activity will appear here.
+        No dataset loaded yet. Use the left sidebar to upload a CSV or run a
+        discovery search across the open-data catalogs — its activity will appear
+        here.
       </div>
     );
   }
@@ -187,7 +189,7 @@ export default function DiscoverTab() {
     <div className="space-y-4">
       {discoverEvents.length > 0 && (
         <StepCard
-          title="CDC Discovery Trace"
+          title="Discovery Trace"
           status="done"
           collapsible
           defaultOpen={!uploadResult}
