@@ -38,6 +38,8 @@ pd.set_option('display.max_columns', 40)
 
 DATA_PATH = os.environ['HEALTHLAB_CSV']
 df = pd.read_csv(DATA_PATH)
+for _c in df.select_dtypes(include='number').columns:
+    df[_c] = df[_c].astype(float)
 # --- agent code below ---
 """
 

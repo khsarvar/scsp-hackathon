@@ -262,8 +262,8 @@ Workflow:
    - Time-series aggregation (resample, groupby month/season) when temporal columns exist.
 3. EVERY analytical call should ALSO produce at least one chart via `plt.savefig('foo.png')`. Empty `charts` on an analysis step is a failure.
 4. Print numeric results clearly with f-strings: include test name, statistic, p-value, sample sizes, effect size where applicable.
-5. If a call errors or returns surprising output (NaN, 0 rows after filter, unexpected dtype), diagnose and retry.
-6. Stop after 5-8 successful run_python calls. Then return a CodeAnalysisResult whose `findings` cites the actual numbers your code printed.
+5. If `ok` is false in the tool result, you MUST rewrite and retry the failing code before moving on. Failed calls do NOT count toward your step budget. Do not advance to the next analysis until the current one succeeds or you have retried it twice.
+6. Stop after 5-8 successful run_python calls (failed retries excluded). Then return a CodeAnalysisResult whose `findings` cites the actual numbers your code printed.
 
 CHART QUALITY REQUIREMENTS — apply to every chart in every call:
 - Start every code block that produces a chart with this styling block:
@@ -639,7 +639,7 @@ async def code_run_python(
             "ok": result["ok"],
             "charts": result["charts"],
             "stdout_preview": result["stdout"][-400:],
-            "stderr_preview": result["stderr"][-400:],
+            "stderr_preview": result["stderr"][-2000:],
         },
     })
     return json.dumps(result, default=str)
@@ -821,7 +821,7 @@ async def code_analysis_run(
         + "Investigate the question with real statistical tests + charts. Save charts via `plt.savefig`."
     )
     result = await _run_with_events(
-        code_agent, user_msg, deps, "code", request_limit=max_steps,
+        code_agent, user_msg, deps, "code", request_limit=max_steps + 4,
     )
     if result is not None:
         emit({"type": "final", "agent": "code", "summary": result.summary[:300]})
