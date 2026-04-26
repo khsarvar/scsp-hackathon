@@ -25,12 +25,10 @@ import requests
 # question. Add a new portal by appending one tuple here — no other code change.
 # Each entry: (domain, label, category, hint).
 SOCRATA_PORTALS: list[tuple[str, str, str, str]] = [
-    # Federal — public health
+    # Federal — public health (only Socrata-hosted ones; CMS/Medicare/CA/etc. are
+    # on CKAN/Drupal/ArcGIS and would 404 the Socrata catalog API).
     ("data.cdc.gov",     "CDC Open Data",        "federal-health",  "disease surveillance, vaccination, mortality, BRFSS, NHANES"),
-    ("data.cms.gov",     "CMS / Medicare",       "federal-health",  "Hospital Compare, Nursing Home Compare, provider quality + utilization"),
     ("healthdata.gov",   "HHS HealthData.gov",   "federal-health",  "HHS-wide datasets: hospital capacity, Medicaid, COVID operational data"),
-    # Federal — non-health
-    ("data.medicare.gov","Medicare.gov",         "federal-health",  "consumer-facing Medicare quality + cost data"),
     # Cities
     ("data.cityofnewyork.us", "NYC Open Data",   "city",            "311 complaints, NYPD, taxi/Uber, MV collisions, restaurant inspections, building permits, schools"),
     ("data.cityofchicago.org","Chicago Data Portal","city",         "crime, taxi/TNP rideshare, food inspections, building violations, 311"),
@@ -38,15 +36,10 @@ SOCRATA_PORTALS: list[tuple[str, str, str, str]] = [
     ("data.sfgov.org",        "San Francisco",   "city",            "311, crime, permits, MUNI transit, restaurant inspections"),
     ("data.seattle.gov",      "Seattle",         "city",            "police reports, building permits, transit, parks"),
     ("data.austintexas.gov",  "Austin",          "city",            "crime, building permits, traffic, animal services"),
-    ("data.boston.gov",       "Boston",          "city",            "311, crime, permits, BPD field interrogations"),
-    ("opendata.dc.gov",       "Washington DC",   "city",            "permits, transit, crime, public services"),
     # States
     ("data.ny.gov",      "New York State",       "state",           "education, vehicle registrations, lottery, SNAP, environmental, labor"),
     ("data.wa.gov",      "Washington State",     "state",           "education, transportation, environment, labor stats"),
     ("data.texas.gov",   "Texas",                "state",           "education, transportation, public safety, environment"),
-    ("data.ca.gov",      "California",           "state",           "education, environment, labor, transportation"),
-    # Energy / housing / other federal
-    ("data.energy.gov",  "Department of Energy", "federal-other",   "energy production, consumption, fuel economy, emissions"),
 ]
 
 SOCRATA_DOMAINS: list[str] = [p[0] for p in SOCRATA_PORTALS]
@@ -130,7 +123,11 @@ def _resolve_domains(domain: str | list[str] | None) -> list[str]:
 def _cached_catalog_search(domains_key: str, query: str, limit: int) -> dict:
     """Cached wrapper — Socrata catalog rarely changes within a session, and the
     discover loop often re-issues the same query while exploring. Process-wide cache.
-    `domains_key` is a comma-joined sorted tuple of domains (cache key)."""
+    `domains_key` is a comma-joined sorted tuple of domains (cache key).
+
+    If the multi-domain call 404s (Socrata rejects the whole batch when one domain
+    isn't actually Socrata-hosted), fall back to per-domain calls and merge results.
+    """
     params = {
         "domains": domains_key,
         "q": query,
@@ -141,7 +138,29 @@ def _cached_catalog_search(domains_key: str, query: str, limit: int) -> dict:
     # without it.
     if "," not in domains_key:
         params["search_context"] = domains_key
-    return _catalog_get(params)
+    try:
+        return _catalog_get(params)
+    except requests.HTTPError as e:
+        if e.response is None or e.response.status_code != 404 or "," not in domains_key:
+            raise
+        # One or more of the domains in the batch isn't Socrata-hosted. Fall back to
+        # per-domain calls; skip any that 404 individually so the agent still gets
+        # results from the working ones.
+        merged: list[dict] = []
+        for d in domains_key.split(","):
+            try:
+                sub = _catalog_get({
+                    "domains": d, "search_context": d,
+                    "q": query, "only": "dataset", "limit": limit,
+                })
+                merged.extend(sub.get("results", []))
+            except requests.HTTPError:
+                continue
+        merged.sort(
+            key=lambda e: e.get("resource", {}).get("page_views", {}).get("page_views_total", 0),
+            reverse=True,
+        )
+        return {"results": merged[:limit]}
 
 
 @functools.lru_cache(maxsize=128)
