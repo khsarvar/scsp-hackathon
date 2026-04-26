@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import clsx from "clsx";
 import DropZone from "@/components/upload/DropZone";
 import { useSession } from "@/hooks/useSession";
@@ -92,6 +92,16 @@ export default function LeftSidebar() {
   const [discoverQuestion, setDiscoverQuestion] = useState("");
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === "string") setDiscoverQuestion(detail);
+    };
+    window.addEventListener("healthlab:set-discover-question", handler);
+    return () =>
+      window.removeEventListener("healthlab:set-discover-question", handler);
+  }, []);
 
   const busy =
     state.step === "uploading" ||
@@ -202,6 +212,7 @@ export default function LeftSidebar() {
             Discover Open Data
           </p>
           <textarea
+            id="sidebar-discover-question"
             value={discoverQuestion}
             onChange={(e) => setDiscoverQuestion(e.target.value)}
             onKeyDown={(e) => {
@@ -339,7 +350,7 @@ export default function LeftSidebar() {
         )}
 
         {/* Upload section */}
-        <div>
+        <div id="sidebar-upload" className="transition-all">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Upload Dataset</p>
           <DropZone
             onUploadComplete={handleUploadComplete}

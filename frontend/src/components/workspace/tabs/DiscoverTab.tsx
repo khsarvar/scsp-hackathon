@@ -7,6 +7,7 @@ import ProfilingReport from "../ProfilingReport";
 import JoinDecision from "../JoinDecision";
 import DatasetPicker from "../DatasetPicker";
 import ChartGallery from "../ChartGallery";
+import WelcomeState from "../WelcomeState";
 import { useSession } from "@/hooks/useSession";
 import { streamDiscoverWithSelection } from "@/lib/api";
 import { consumeAgentStream } from "@/hooks/useAgentStream";
@@ -180,13 +181,7 @@ export default function DiscoverTab() {
   }
 
   if (!uploadResult && !profileResult && discoverEvents.length === 0) {
-    return (
-      <div className="text-sm text-slate-400 px-2 py-8">
-        No dataset loaded yet. Use the left sidebar to upload a CSV or run a
-        discovery search across the open-data catalogs — its activity will appear
-        here.
-      </div>
-    );
+    return <WelcomeState />;
   }
 
   return (
