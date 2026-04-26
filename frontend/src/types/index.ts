@@ -14,6 +14,7 @@ export interface ColumnProfile {
   min?: number | null;
   max?: number | null;
   mean?: number | null;
+  median?: number | null;
   std?: number | null;
   is_datetime_like: boolean;
   is_categorical: boolean;

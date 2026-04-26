@@ -61,8 +61,12 @@ export function useChat(sessionId: string | null) {
                       }
                       return updated;
                     });
+                  } else if (parsed.error) {
+                    throw new Error(parsed.error);
                   }
-                } catch {}
+                } catch (e) {
+                  if (e instanceof Error) throw e;
+                }
               }
             }
           }
