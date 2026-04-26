@@ -36,12 +36,13 @@ def _build_provenance(ws, primary: str, research_question: str, filename: str) -
     sources = []
     for alias, meta in ws.meta.items():
         cdc_id = meta.get("id")
+        domain = meta.get("domain") or "data.cdc.gov"
         soql = meta.get("soql") or {}
         sources.append({
             "alias": alias,
             "source_str": meta.get("source", alias),
             "cdc_id": cdc_id,
-            "cdc_url": f"https://data.cdc.gov/resource/{cdc_id}" if cdc_id else None,
+            "cdc_url": f"https://{domain}/resource/{cdc_id}" if cdc_id else None,
             "soql_filter": soql.get("where"),
             "soql_select": soql.get("select"),
             "parents": meta.get("parents", []),

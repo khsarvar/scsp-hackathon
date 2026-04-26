@@ -13,15 +13,15 @@ from fastapi.responses import StreamingResponse
 
 
 SENTINEL_DONE = {"type": "_done"}
-SENTINEL_ERROR = "_error"
 
 
 async def stream_agent_events(run_sync: Callable[[Callable[[dict], None]], dict | None]) -> AsyncIterator[str]:
     """Bridge a sync agent loop into an SSE byte stream.
 
     `run_sync(emit)` should run the agent loop (in this thread) and call `emit(event)`
-    for every event the agent produces. When run_sync returns, its return value (if a
-    dict) is emitted as a final 'result' event before the stream ends.
+    for every event the agent produces. The bridge always emits a final 'result' event
+    before the stream ends — synthesizing an `{ok: false, error}` payload if run_sync
+    raises or returns a non-dict — so the frontend always exits its loading state.
     """
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -34,8 +34,10 @@ async def stream_agent_events(run_sync: Callable[[Callable[[dict], None]], dict 
             result = await asyncio.to_thread(run_sync, emit)
             if isinstance(result, dict):
                 queue.put_nowait({"type": "result", "data": result})
+            else:
+                queue.put_nowait({"type": "result", "data": {"ok": False, "error": "Agent did not return a result."}})
         except Exception as e:
-            queue.put_nowait({"type": SENTINEL_ERROR, "message": f"{type(e).__name__}: {e}"})
+            queue.put_nowait({"type": "result", "data": {"ok": False, "error": f"{type(e).__name__}: {e}"}})
         finally:
             queue.put_nowait(SENTINEL_DONE)
 

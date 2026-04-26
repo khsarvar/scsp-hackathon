@@ -1,34 +1,63 @@
 # HealthLab Agent
 
-> **Turn public health data into reproducible insights.**
+An autonomous public-health research assistant. Upload a CSV (or have the agent
+discover one from CDC / Socrata), and it auto-profiles, cleans, analyzes, and
+explains the data — producing charts, tables, a research memo, and
+assumption-aware statistical tests with their reasoning streamed live.
 
-An autonomous AI-powered public health research assistant. Upload a CSV (or have
-the agent **discover** a CDC dataset for you), and it auto-profiles, cleans,
-analyzes, and explains your data — producing charts, tables, a research memo,
-and assumption-aware statistical tests with their reasoning shown live.
+## Team
 
-This is a merge of two earlier branches:
+- Akbar Khamidov
+- Sarvar Khamidov
+- Jonathan Bramsen
 
-- **`labloop`** — the Next.js + React + Tailwind UI and FastAPI backend skeleton (the polished UX).
-- **`akbar/init`** — four agentic Anthropic tool-use loops over a multi-frame `Workspace`: CDC discovery, auto-clean, hypothesis generation, and assumption-aware statistical testing (the depth).
+## Track
 
-The merge keeps labloop's full upload → profile → plan → analyze → memo flow,
-and adds, as additional step cards, the agentic capabilities from akbar/init:
-**CDC Discover**, an **Agentic Cleaning** trace, **Testable Hypotheses**, and a
-free-form **Statistical Test** panel with a live thought stream.
+Autonomous Labs
 
----
+## What we built
 
-## Quick Start
+A FastAPI + Next.js workspace that wraps four agentic tool-use loops over a
+multi-frame `Workspace`:
+
+1. **Discovery** — Socrata catalog search, SoQL fetch, and join/aggregate over
+   12+ public-health portals (CDC, HHS, NYC, Chicago, LA, etc.).
+2. **Cleaning** — agent picks named ops from `CLEANING_OPS` (dedup, null fill,
+   IQR cap, type coerce, …) and self-corrects on failure.
+3. **Hypotheses** — single-shot generation of testable hypotheses with test
+   types and rationales.
+4. **Statistical testing** — agent picks a test from `STATS_TESTS`, validates
+   assumptions (Shapiro normality + non-parametric fallback), and explains the
+   result.
+
+The LLM never writes pandas / scipy / HTTP. It picks named ops from small fixed
+vocabularies and supplies arguments. Each loop accepts an `on_event` callback,
+so the same code path serves both synchronous tests and live SSE streaming to
+the workspace UI.
+
+## Datasets / APIs
+
+- **Socrata Open Data API** — catalog discovery (`/api/catalog/v1`) and SoQL
+  resource fetch (`/resource/{id}.json`) across ~12 approved Socrata portals
+  including `data.cdc.gov`, `healthdata.gov`, `data.cityofnewyork.us`,
+  `data.cityofchicago.org`, `data.lacity.org`, `data.sfgov.org`, NY/WA/TX state
+  portals. See `backend/services/discovery.py:SOCRATA_PORTALS`.
+- **OpenAI API** — agent loops (Pydantic-AI), one-shot calls for analysis
+  plans / hypotheses / chat. Set `OPENAI_API_KEY` in `backend/.env`.
+- **PubMed E-utilities** — literature review agent (`/api/literature`).
+- **User upload** — any CSV. Bundled demos: `demo_asthma.csv` (CA county ER
+  visits 2020–2023), `sample_dirty.csv` (intentionally messy trial data).
+
+## How to run
 
 ### 1. Configure
 
 ```bash
 cp .env.example backend/.env
-# edit backend/.env and set ANTHROPIC_API_KEY
+# edit backend/.env and set OPENAI_API_KEY
 ```
 
-### 2. Backend (Python FastAPI)
+### 2. Backend (FastAPI)
 
 ```bash
 cd backend
@@ -37,7 +66,8 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-Backend runs at <http://localhost:8000>; OpenAPI docs at <http://localhost:8000/docs>.
+Backend at <http://localhost:8000>; OpenAPI docs at
+<http://localhost:8000/docs>.
 
 ### 3. Frontend (Next.js)
 
@@ -47,121 +77,90 @@ npm install
 npm run dev
 ```
 
-Frontend runs at <http://localhost:3000>.
+Frontend at <http://localhost:3000>.
 
----
+## Workspace flow
 
-## What you can do
+1. **Source** — Discover (research question), Upload, or demo.
+2. **Preview** — first 50 rows.
+3. **Quality report** — auto-detected types, missing %, IQR outliers.
+4. **Analysis plan** — the model proposes a tailored 5–7-step plan; click *Run*.
+5. **Agentic clean** *(optional)* — live trace of each cleaning decision.
+6. **Hypotheses** — 3–5 testable hypotheses; *Run this test* fires a
+   deterministic stats test.
+7. **Free-form stats** — ask any analytical question; agent picks the test,
+   checks assumptions, explains.
+8. **Memo + charts** — exportable Markdown.
 
-Three data sources in the left sidebar:
-
-- **CDC Discover** — type a research question. The discovery agent searches
-  `data.cdc.gov`, fetches via SoQL, and (when needed) joins or aggregates
-  multiple datasets into a single analysis-ready frame. The thought stream is
-  live in the workspace.
-- **Upload CSV** — drag-drop any CSV.
-- **Demo datasets** — Asthma ER visits (CA counties 2020–2023) or a small
-  intentionally-dirty treatment trial CSV.
-
-Once a dataset is loaded, the workspace progresses through:
-
-1. **Dataset Preview** — first 50 rows.
-2. **Data Quality Report** — auto-detected types, missing %, IQR outliers.
-3. **Proposed Analysis Plan** — Claude proposes a tailored 5–7-step plan; click *Run analysis* to materialise it.
-4. **Agentic Cleaning** _(optional)_ — watch the cleaning agent decide each op live.
-5. **Testable Hypotheses** — generate 3–5 specific hypotheses with test types and rationales; **Run this test** kicks off a deterministic stats test (with Shapiro normality check + non-parametric fallback).
-6. **Statistical Test (free-form)** — ask any analytical question; the agent picks the right test, checks assumptions, and explains the result, all streamed.
-7. **Run Analysis** results — cleaning summary, summary stats, charts, findings, limitations, follow-up, exportable Markdown memo.
-
-The **right panel** is the AI chat agent, scoped to the active session and
-streaming via SSE.
-
----
+The right panel is a session-scoped chat agent (SSE).
 
 ## Architecture
 
 ```
 backend/
-  main.py            FastAPI app — original + agentic routers
-  config.py          env / settings
+  main.py                FastAPI app
   models/
-    schemas.py       request / response Pydantic shapes
-    session.py       in-memory session store, now holding a Workspace + agent traces
+    schemas.py           Pydantic request / response shapes
+    session.py           in-memory store + Workspace + agent traces
   routers/
-    upload.py        POST /api/upload
-    profile.py       POST /api/profile  (uses ai_service.generate_analysis_plan)
-    analyze.py       POST /api/analyze  (deterministic clean + charts + findings)
-    chat.py          POST /api/chat     (SSE)
-    export.py        GET  /api/export/{id}
-    discover.py      POST /api/discover (SSE)        ← akbar/init agent
-    agent_clean.py   POST /api/agent_clean (SSE)     ← akbar/init agent
-    hypotheses.py    POST /api/hypotheses
-    stats.py         POST /api/stats/run, POST /api/stats/ask (SSE)
-    streaming.py     SSE bridge for sync agent loops
+    upload.py            POST /api/upload
+    profile.py           POST /api/profile
+    analyze.py           POST /api/analyze
+    chat.py              POST /api/chat (SSE)
+    export.py            GET  /api/export/{id}
+    discover.py          POST /api/discover (SSE) + /recommend + /select
+    agent_clean.py       POST /api/agent_clean (SSE)
+    hypotheses.py        POST /api/hypotheses
+    stats.py             POST /api/stats/run + /ask (SSE)
+    literature.py        POST /api/literature (SSE)
+    streaming.py         sync-loop → SSE bridge
   services/
-    ai_service.py    one-shot Claude calls (plan, findings, chat) — labloop
-    profiler.py      labloop's column role inference + IQR outliers
-    cleaner.py       labloop's deterministic clean (dedup → null fill → IQR cap)
-    analyzer.py      summary stats + chart specs — labloop
-    tools.py         CLEANING_OPS registry + STATS_TESTS dict — akbar/init
-    discovery.py     Socrata catalog + Workspace + JOIN_OPS — akbar/init
-    agent.py         four tool-use loops with on_event callback — akbar/init
+    ai_service.py        one-shot LLM calls
+    llm_agents.py        Pydantic-AI agents (clean, discover, analyze, code)
+    agent.py             sync entry points wrapping the async loops
+    profiler.py          column role inference + IQR outliers
+    cleaner.py           deterministic clean (dedup → fill → cap)
+    analyzer.py          summary stats + chart specs
+    tools.py             CLEANING_OPS + STATS_TESTS registries
+    discovery.py         Socrata catalog + Workspace + JOIN_OPS
 
 frontend/
-  src/app/page.tsx                 → AppShell (3 columns)
-  src/app/api/                     Next.js proxies to FastAPI (incl. SSE)
-  src/components/layout/
-    LeftSidebar.tsx                CDC Discover, Upload, demos, history
-    RightPanel.tsx                 Chat agent
-  src/components/workspace/
-    WorkspaceArea.tsx              Step-card driver
-    ThoughtStream.tsx              Renders agent events
-    HypothesesPanel.tsx            Generate + run hypothesis tests
-    StatsTestPanel.tsx             Free-form ask → streamed test
-    (… plus the original labloop step cards)
+  src/app/page.tsx                  AppShell (3 columns)
+  src/app/api/                      Next.js → FastAPI proxies (incl. SSE)
+  src/components/layout/            LeftSidebar (sources), RightPanel (chat)
+  src/components/workspace/         step cards + ThoughtStream + panels
   src/hooks/
-    useSession.tsx                 Context + reducer (with agent state)
-    useChat.ts                     Chat SSE consumer
-    useAgentStream.ts              Generic agent-event SSE consumer
-  src/lib/
-    api.ts                         Fetch wrappers
-    constants.ts
+    useSession.tsx                  context + reducer
+    useChat.ts                      chat SSE consumer
+    useAgentStream.ts               generic agent-event SSE consumer
+  src/lib/api.ts                    fetch wrappers
 ```
 
-The agent loops (`backend/services/agent.py`) are deliberately sync — they call
-the Anthropic SDK and `requests` directly — and the FastAPI SSE endpoints bridge
-them through a thread + asyncio.Queue (`backend/routers/streaming.py`). Each
-loop accepts an `on_event(event)` callback so the same code path works for both
-synchronous tests (collect events into a list) and live streaming.
+The agent loops are async (Pydantic-AI on top of the OpenAI SDK). The SSE
+endpoints (`backend/routers/streaming.py`) run them in a worker thread and
+bridge events through an `asyncio.Queue`, always emitting a terminal `result`
+event so the UI exits its loading state on both success and failure paths.
 
-## Why this works
+## Extending
 
-The LLM never writes pandas, scipy, or HTTP code. It picks named ops from small
-fixed vocabularies (`CLEANING_OPS`, `STATS_TESTS`, `DISCOVERY_OPS`, `JOIN_OPS`)
-and supplies arguments. The "agentic" part is the loops: each agent observes
-state after every op, decides what to do next, and self-corrects when an op
-fails — `{ok: false, error}` returns let the agent recover instead of crashing.
-
-## Tweak guide
-
-- **Add a cleaning op:** decorate a function in `backend/services/tools.py` with
+- **Cleaning op** — decorate a function in `backend/services/tools.py` with
   `@_op("name")` and append a line to `CLEANING_OPS_DOC`.
-- **Add a statistical test:** add a function returning a dict with at least
-  `test`, `p_value`, `interpretation` to `STATS_TESTS` and `STATS_TESTS_DOC`.
-  The `analyze` tool's enum regenerates from `STATS_TESTS` on import.
-- **Add a CDC / join op:** add a function `(workspace, **args) -> dict` to
-  `DISCOVERY_OPS` or `JOIN_OPS` in `backend/services/discovery.py` and append a
-  line to the matching `_DOC`. The discover-loop tool's enum picks it up.
-- **Change an agent's personality:** edit the system prompts at the top of each
-  section in `backend/services/agent.py`.
+- **Stat test** — add a function returning `{test, p_value, interpretation}`
+  to `STATS_TESTS` + `STATS_TESTS_DOC`. The `analyze` tool's enum regenerates
+  on import.
+- **Discovery / join op** — add `(workspace, **args) -> dict` to
+  `DISCOVERY_OPS` / `JOIN_OPS` in `backend/services/discovery.py` and update
+  the matching `_DOC`.
+- **Agent personality** — edit the system prompts at the top of each agent in
+  `backend/services/llm_agents.py`.
 
 ## Notes / limits
 
-- Sessions are in-memory only. A backend restart loses session state. Uploaded
-  CSVs are persisted to `UPLOAD_DIR` (default `/tmp/healthlab_sessions`) and the
-  Workspace is rehydrated from disk on demand.
-- Socrata's server-side `$limit` default is 1000. The discover loop is prompted
-  to ask for 25,000 rows per fetch; cap is 100,000. For larger pulls, filter
-  server-side with SoQL `where=`.
-- The hypothesis generator is single-shot (no tool loop) and emits JSON; if
-  parsing fails the UI shows the raw text.
+- Sessions are in-memory; restart loses state. Uploaded CSVs persist to
+  `UPLOAD_DIR` (default `/tmp/healthlab_sessions`); the Workspace rehydrates
+  from disk on demand.
+- Socrata `$limit` default is 1000. The discover loop is prompted to fetch
+  25,000 rows; cap 100,000. For larger pulls, filter server-side with
+  SoQL `where=`.
+- Hypothesis generation is single-shot. On JSON parse failure the UI shows the
+  raw text.
