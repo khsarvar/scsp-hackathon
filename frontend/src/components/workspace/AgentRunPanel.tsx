@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import type { CodeStep } from "@/types";
 import { chartUrl } from "@/lib/api";
@@ -104,29 +105,113 @@ function StepCard({
         )}
 
         {step.charts.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-            {step.charts.map((c) => (
-              <a
-                key={c}
-                href={chartUrl(sessionId, c)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group block rounded-lg border border-slate-100 overflow-hidden bg-white hover:border-teal-300 transition-colors"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={chartUrl(sessionId, c)}
-                  alt={c}
-                  className="w-full h-auto"
-                />
-                <p className="text-[10px] text-slate-500 px-2 py-1 truncate font-mono group-hover:text-teal-700">
-                  {c}
-                </p>
-              </a>
-            ))}
-          </div>
+          <ChartGrid charts={step.charts} sessionId={sessionId} />
         )}
       </div>
     </div>
+  );
+}
+
+function ChartGrid({ charts, sessionId }: { charts: string[]; sessionId: string }) {
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  const close = useCallback(() => setLightboxIndex(null), []);
+  const prev = useCallback(() => setLightboxIndex((i) => (i !== null ? (i - 1 + charts.length) % charts.length : null)), [charts.length]);
+  const next = useCallback(() => setLightboxIndex((i) => (i !== null ? (i + 1) % charts.length : null)), [charts.length]);
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+      if (e.key === "ArrowLeft") prev();
+      if (e.key === "ArrowRight") next();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [lightboxIndex, close, prev, next]);
+
+  return (
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+        {charts.map((c, i) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setLightboxIndex(i)}
+            className="group block rounded-lg border border-slate-100 overflow-hidden bg-white hover:border-teal-300 transition-colors text-left w-full cursor-zoom-in"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={chartUrl(sessionId, c)}
+              alt={c}
+              className="w-full h-auto"
+            />
+            <p className="text-[10px] text-slate-500 px-2 py-1 truncate font-mono group-hover:text-teal-700">
+              {c}
+            </p>
+          </button>
+        ))}
+      </div>
+
+      {lightboxIndex !== null && createPortal(
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-100">
+          {/* Top bar */}
+          <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-200 shadow-sm">
+            <p className="text-sm font-mono text-slate-500 truncate max-w-lg">
+              {charts[lightboxIndex]}
+            </p>
+            <div className="flex items-center gap-3">
+              {charts.length > 1 && (
+                <span className="text-xs text-slate-400">
+                  {lightboxIndex + 1} / {charts.length}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={close}
+                className="w-8 h-8 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center text-lg leading-none transition-colors"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+
+          {/* Chart area — clicking the background closes */}
+          <div className="flex-1 flex items-center justify-center p-8 relative cursor-pointer" onClick={close}>
+            {charts.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); prev(); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white border border-slate-200 hover:border-teal-400 shadow text-slate-600 hover:text-teal-600 flex items-center justify-center text-xl transition-colors"
+                aria-label="Previous"
+              >
+                ‹
+              </button>
+            )}
+
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={chartUrl(sessionId, charts[lightboxIndex])}
+              alt={charts[lightboxIndex]}
+              className="rounded-xl shadow-lg max-h-full max-w-full object-contain bg-white cursor-default"
+              onClick={(e) => e.stopPropagation()}
+            />
+
+            {charts.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); next(); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white border border-slate-200 hover:border-teal-400 shadow text-slate-600 hover:text-teal-600 flex items-center justify-center text-xl transition-colors"
+                aria-label="Next"
+              >
+                ›
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
