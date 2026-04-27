@@ -1,0 +1,377 @@
+"use client";
+
+import { useState, useMemo, useEffect } from "react";
+import clsx from "clsx";
+import DropZone from "@/components/upload/DropZone";
+import { useSession } from "@/hooks/useSession";
+import { profileDataset, recommendDatasets, streamLiterature } from "@/lib/api";
+import { consumeAgentStream } from "@/hooks/useAgentStream";
+import type {
+  AgentEvent,
+  LiteratureResult,
+  UploadResponse,
+} from "@/types";
+
+export default function LeftSidebar() {
+  const { state, dispatch } = useSession();
+
+  const discoveredDatasets = useMemo(() => {
+    let primaryAlias: string | null = null;
+
+    // dataset_id → { title, description } from get_dataset_schema results
+    const schemaByDatasetId: Record<string, { title: string; description: string }> = {};
+    // alias → { datasetId, domain, where } from fetch_dataset tool_call args
+    const fetchArgsByAlias: Record<string, { datasetId: string; domain?: string; where?: string }> = {};
+
+    for (const ev of state.discoverEvents) {
+      const e = ev as Record<string, unknown>;
+
+      if (e.type === "final" && e.agent === "discover" && e.primary_alias) {
+        primaryAlias = e.primary_alias as string;
+      }
+
+      if (e.type === "tool_call" && e.agent === "discover" && e.name === "fetch_dataset") {
+        const args = e.args as Record<string, unknown> | undefined;
+        if (args?.alias) {
+          fetchArgsByAlias[args.alias as string] = {
+            datasetId: (args.dataset_id as string) ?? "",
+            domain: args.domain as string | undefined,
+            where: args.where as string | undefined,
+          };
+        }
+      }
+
+      if (e.type === "tool_result" && e.agent === "discover" && e.name === "get_dataset_schema") {
+        const r = e.result as Record<string, unknown> | undefined;
+        if (r?.id) {
+          schemaByDatasetId[r.id as string] = {
+            title: (r.name as string) ?? "",
+            description: (r.description as string) ?? "",
+          };
+        }
+      }
+    }
+
+    const datasets: {
+      alias: string;
+      rows: number;
+      cols: number;
+      datasetId: string;
+      domain: string;
+      title: string;
+      description: string;
+      where?: string;
+    }[] = [];
+
+    for (const ev of state.discoverEvents) {
+      const e = ev as Record<string, unknown>;
+      if (e.type === "tool_result" && e.agent === "discover" && e.name === "fetch_dataset") {
+        const r = e.result as Record<string, unknown> | undefined;
+        if (r?.ok && r.alias) {
+          const alias = r.alias as string;
+          const fetchArgs = fetchArgsByAlias[alias];
+          const datasetId = fetchArgs?.datasetId ?? "";
+          const domain = fetchArgs?.domain ?? (r.domain as string | undefined) ?? "data.cdc.gov";
+          const schema = datasetId ? schemaByDatasetId[datasetId] : undefined;
+          datasets.push({
+            alias,
+            rows: (r.rows as number) ?? 0,
+            cols: Array.isArray(r.columns) ? (r.columns as unknown[]).filter(c => c !== "...").length : 0,
+            datasetId,
+            domain,
+            title: schema?.title ?? "",
+            description: schema?.description ?? "",
+            where: fetchArgs?.where,
+          });
+        }
+      }
+    }
+
+    return { datasets, primaryAlias };
+  }, [state.discoverEvents]);
+  const [discoverQuestion, setDiscoverQuestion] = useState("");
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === "string") setDiscoverQuestion(detail);
+    };
+    window.addEventListener("healthlab:set-discover-question", handler);
+    return () =>
+      window.removeEventListener("healthlab:set-discover-question", handler);
+  }, []);
+
+  const busy =
+    state.step === "uploading" ||
+    state.step === "recommending" ||
+    state.step === "profiling" ||
+    state.step === "discovering" ||
+    state.step === "join_decision" ||
+    discovering;
+
+  const profileAfterUpload = async (result: UploadResponse) => {
+    dispatch({ type: "SET_UPLOAD", payload: result });
+    dispatch({ type: "SET_STEP", step: "profiling" });
+    try {
+      const profile = await profileDataset(
+        result.session_id,
+        state.pipelineConfig.runAnalysis,
+      );
+      dispatch({ type: "SET_PROFILE", payload: profile });
+    } catch (err) {
+      dispatch({ type: "SET_ERROR", error: (err as Error).message });
+    }
+  };
+
+  const handleUploadComplete = async (result: UploadResponse) => {
+    await profileAfterUpload(result);
+  };
+
+  const handleDiscover = async () => {
+    const q = discoverQuestion.trim();
+    if (!q || discovering) return;
+    setDiscovering(true);
+    setDiscoverError(null);
+    dispatch({ type: "DISCOVER_RESET" });
+    dispatch({ type: "LITERATURE_RESET" });
+    dispatch({ type: "SET_STEP", step: "recommending" });
+
+    const literaturePromise = state.pipelineConfig.runLiterature
+      ? (async () => {
+          let result: LiteratureResult | null = null;
+          try {
+            const litRes = await streamLiterature(q, null);
+            await consumeAgentStream(litRes, (event: AgentEvent) => {
+              dispatch({ type: "LITERATURE_EVENT", event });
+              if (event.type === "result") {
+                const data = (event as { data: Record<string, unknown> }).data;
+                if (data.ok && typeof data.summary === "string") {
+                  result = {
+                    question: (data.question as string) ?? q,
+                    summary: data.summary,
+                    articles: (data.articles as LiteratureResult["articles"]) ?? [],
+                  };
+                  dispatch({ type: "SET_LITERATURE_RESULT", result });
+                }
+              }
+            });
+          } catch {
+            // non-fatal
+          }
+          return result;
+        })()
+      : Promise.resolve(null);
+
+    try {
+      const recResult = await recommendDatasets(q);
+      // Always go to "recommended" — DiscoverTab auto-skips picker if results are empty
+      dispatch({
+        type: "SET_RECOMMENDATIONS",
+        recommendations: recResult.ok ? recResult.results : [],
+        question: q,
+      });
+      dispatch({ type: "SET_STEP", step: "recommended" });
+    } catch (err) {
+      setDiscoverError((err as Error).message);
+      dispatch({ type: "SET_STEP", step: "idle" });
+    } finally {
+      literaturePromise.catch(() => {});
+      setDiscovering(false);
+    }
+  };
+
+  const handleReset = () => {
+    dispatch({ type: "RESET" });
+    setDiscoverQuestion("");
+    setDiscoverError(null);
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-sky-500 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-slate-800">HealthLab Agent</h1>
+            <p className="text-xs text-slate-400">Public Health Analysis</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+        {/* Open-data Discover */}
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            Discover Open Data
+          </p>
+          <textarea
+            id="sidebar-discover-question"
+            value={discoverQuestion}
+            onChange={(e) => setDiscoverQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleDiscover();
+              }
+            }}
+            placeholder="Research question — federal, state, or city. e.g. Do NYC Uber pickups peak at different hours by borough? Or: How does flu vaccination relate to hospitalization rates by state?"
+            rows={3}
+            disabled={busy}
+            className={clsx(
+              "w-full resize-none rounded-lg border border-slate-200 px-2.5 py-2 text-xs",
+              "placeholder:text-slate-300 focus:outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-400/20",
+              busy && "opacity-50 cursor-not-allowed"
+            )}
+          />
+          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-2 space-y-1.5">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+              Add to run
+            </p>
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.pipelineConfig.runAnalysis}
+                disabled={busy}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_PIPELINE_CONFIG",
+                    config: { runAnalysis: e.target.checked },
+                  })
+                }
+                className="rounded border-slate-300 text-teal-500 focus:ring-teal-400"
+              />
+              LLM analysis (findings, code agent)
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={state.pipelineConfig.runLiterature}
+                disabled={busy}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_PIPELINE_CONFIG",
+                    config: { runLiterature: e.target.checked },
+                  })
+                }
+                className="rounded border-slate-300 text-teal-500 focus:ring-teal-400"
+              />
+              Literature review (PubMed)
+            </label>
+          </div>
+          <button
+            onClick={handleDiscover}
+            disabled={busy || !discoverQuestion.trim()}
+            className={clsx(
+              "mt-1.5 w-full px-3 py-1.5 rounded-lg text-xs font-semibold transition-all",
+              !busy && discoverQuestion.trim()
+                ? "bg-teal-500 hover:bg-teal-600 text-white shadow-sm"
+                : "bg-slate-100 text-slate-300 cursor-not-allowed"
+            )}
+          >
+            {discovering ? "Searching open-data catalogs..." : "Run pipeline"}
+          </button>
+          {discoverError && (
+            <p className="mt-1.5 text-xs text-red-500">{discoverError}</p>
+          )}
+        </div>
+
+        {/* Discovered datasets — informational compact list */}
+        {discoveredDatasets.datasets.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Discovered Datasets
+            </p>
+            <div className="space-y-2">
+              {discoveredDatasets.datasets.map((ds) => {
+                const isPrimary = ds.alias === discoveredDatasets.primaryAlias;
+                return (
+                  <div
+                    key={ds.alias}
+                    className={clsx(
+                      "rounded-lg border px-3 py-2.5 space-y-1",
+                      isPrimary ? "bg-teal-50 border-teal-200" : "bg-slate-50 border-slate-100"
+                    )}
+                  >
+                    {/* Alias + primary badge */}
+                    <div className="flex items-center justify-between gap-1">
+                      <span className={clsx(
+                        "text-xs font-semibold truncate",
+                        isPrimary ? "text-teal-800" : "text-slate-700"
+                      )}>
+                        {ds.alias}
+                      </span>
+                      {isPrimary && (
+                        <span className="shrink-0 text-[9px] font-bold bg-teal-500 text-white px-1.5 py-0.5 rounded-full leading-none">
+                          primary
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Dataset title */}
+                    {ds.title && (
+                      <p className="text-[11px] text-slate-500 leading-snug">{ds.title}</p>
+                    )}
+
+                    {/* Rows × cols */}
+                    <p className={clsx("text-[11px]", isPrimary ? "text-teal-600" : "text-slate-400")}>
+                      {ds.rows.toLocaleString()} rows · {ds.cols} cols
+                    </p>
+
+                    {/* SoQL filter */}
+                    {ds.where && (
+                      <p className="text-[10px] text-slate-400 font-mono truncate" title={ds.where}>
+                        WHERE {ds.where}
+                      </p>
+                    )}
+
+                    {/* Source link */}
+                    {ds.datasetId && (
+                      <a
+                        href={`https://${ds.domain}/d/${ds.datasetId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 text-[10px] text-sky-500 hover:text-sky-700 hover:underline"
+                      >
+                        View on {ds.domain} ↗
+                      </a>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Upload section */}
+        <div id="sidebar-upload" className="transition-all">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Upload Dataset</p>
+          <DropZone
+            onUploadComplete={handleUploadComplete}
+            isLoading={state.step === "uploading" || state.step === "profiling"}
+          />
+        </div>
+
+      </div>
+
+      {/* Footer */}
+      <div className="px-4 py-3 border-t border-slate-100">
+        {state.step !== "idle" && (
+          <button
+            onClick={handleReset}
+            className="w-full text-xs text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            ← Start over
+          </button>
+        )}
+        <p className="text-center text-xs text-slate-300 mt-2">HealthLab Agent v1.0</p>
+      </div>
+    </div>
+  );
+}
